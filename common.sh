@@ -18,12 +18,13 @@ require_root() {
 
 # Exécute une commande en tant qu'appelant (utile quand le script tourne en root).
 as_caller() {
-  local uid name
+  local uid name home
   uid="$(caller_uid)"
   if [[ "$uid" == "$(id -u)" ]]; then
     "$@"
   else
     name="$(caller_name)"
-    runuser -u "$name" -- "$@"
+    home="$(getent passwd "$uid" | cut -d: -f6)"
+    runuser -u "$name" -- env HOME="$home" USER="$name" LOGNAME="$name" "$@"
   fi
 }

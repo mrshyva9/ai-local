@@ -10,9 +10,10 @@ CHECK=0
 [[ "${1:-}" == "--check" ]] && CHECK=1
 
 PACKAGES=(qemu-system-x86 qemu-utils ovmf cloud-image-utils bridge-utils
-  iproute2 nftables curl openssh-client initramfs-tools grub2-common python3 git)
+  iproute2 nftables curl openssh-client initramfs-tools grub2-common python3 git
+  vim tmux glow rsync)
 COMMANDS=(qemu-system-x86_64 qemu-img cloud-localds ssh curl ip brctl nft
-  sha512sum sha256sum python3 git tar)
+  sha512sum sha256sum python3 git tar vim tmux glow rsync)
 
 fail=0
 bad() { echec "$*"; fail=1; }
@@ -67,7 +68,9 @@ fi
 # --- Clé SSH et répertoires de travail --------------------------------------
 uid="$(caller_uid)"
 gid="$(caller_gid)"
-for dir in "$DATA" "$KEYS" "$CLIENT" "$LOGS" "$RUN"; do
+USER_HOME="$(getent passwd "$uid" | cut -d: -f6)"
+[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || bad "répertoire personnel introuvable pour l'uid ${uid}"
+for dir in "$DATA" "$KEYS" "$LOGS" "$RUN"; do
   if [[ ! -d "$dir" ]]; then
     if (( CHECK )); then
       bad "répertoire absent : ${dir#"$ROOT"/}"
@@ -107,6 +110,24 @@ if [[ ! -f "${KEYS}/known_hosts" ]]; then
     fait "known_hosts créé"
   fi
 fi
+
+# Alias de confort : ne remplace jamais une définition existante de l'utilisateur.
+ensure_aliases() {
+  local rc="${USER_HOME}/.bashrc" missing=()
+  if [[ ! -f "$rc" ]]; then
+    if (( CHECK )); then bad "fichier ${rc} absent"; return 0; fi
+    install -m 0644 -o "$uid" -g "$gid" /dev/null "$rc"
+  fi
+  grep -qE '^[[:space:]]*alias ll=' "$rc" || missing+=("alias ll='ls -alF'")
+  grep -qE '^[[:space:]]*alias la=' "$rc" || missing+=("alias la='ls -A'")
+  if (( ${#missing[@]} == 0 )); then ok "alias ll/la actifs dans ${rc}"; return 0; fi
+  if (( CHECK )); then bad "alias manquant(s) dans ${rc} : ${missing[*]}"; return 0; fi
+  printf '\n# ai-local : alias de confort\n' >>"$rc"
+  printf '%s\n' "${missing[@]}" >>"$rc"
+  chown "$uid:$gid" "$rc"
+  fait "alias ajoutés à ${rc} : ${missing[*]}"
+}
+ensure_aliases
 
 if (( fail )); then
   exit 1

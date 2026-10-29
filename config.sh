@@ -7,7 +7,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DATA="${ROOT}/data/vm"
 KEYS="${ROOT}/data/ssh"
-CLIENT="${ROOT}/data/client"
 LOGS="${ROOT}/logs"
 RUN="${ROOT}/run"
 GUEST_USER="adm"
@@ -44,7 +43,8 @@ WEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.12.4"
 WEBUI_PORT="3000"
 WEBUI_INTERNAL_PORT="8080"
 
-# --- Client hôte (aider installé dans le dépôt, pas dans le HOME) ------------
+# --- Client hôte : uv et aider sont téléchargés à l'installation ------------
+# Rien n'est versionné ni stocké dans le dépôt : tout va dans ~/.local.
 AIDER_VERSION="0.86.2"
 AIDER_PYTHON="3.12"
 UV_VERSION="0.13.5"

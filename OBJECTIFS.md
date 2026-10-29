@@ -40,11 +40,13 @@ Récits utilisateur :
 Interdits, sauf décision explicite en section 13 :
 
 - **Aucune persistance hôte** : pas de service systemd, démon, cron, logrotate,
-  fichier d'état, marqueur « installé ». Seule exception : configuration noyau
-  VFIO (section 6.2).
-- **Aucune écriture hors du dépôt**, sauf VFIO. Rien dans `/var`, `/opt`,
-  `/usr/local`, `/etc` (hors VFIO), ni dans le `$HOME` de l'utilisateur.
-  Le client aider, uv et Python 3.12 vivent dans `data/client/`.
+  fichier d'état, marqueur « installé ». Les seules exceptions sont la
+  configuration noyau VFIO (section 6.2), les paquets Debian demandés,
+  uv/aider dans `~/.local/` et les alias dans `~/.bashrc`.
+- **Pas de binaires dans le dépôt** : uv, Python 3.12 et aider sont téléchargés
+  à l'installation dans `~/.local/`. `data/` ne contient que les artefacts de
+  VM (images, disques, seeds, clés). Rien dans `/opt` ou `/usr/local` ; `/etc`
+  reste réservé à VFIO.
 - **Pas de troisième VM**, pas de reverse proxy, pas de multi-hôte, pas de
   haute disponibilité, pas de Kubernetes.
 - **Pas de framework maison** : pas de bibliothèque de journalisation, pas de
@@ -67,8 +69,9 @@ Interdits, sauf décision explicite en section 13 :
    de plus de 220 lignes, `common.sh` ≤ 30 lignes.
 5. **Dépendances hôte** : paquets de la section 6.1, `qemu-system-x86_64`,
    `qemu-img`, `cloud-localds`, `ssh`, `curl`, `sha256sum`, `sha512sum`, `ip`,
-   `brctl`, `nft`, `python3`, `git`, `tar`. Aider est installé par uv, lui-même
-   téléchargé et vérifié par SHA-256.
+   `brctl`, `nft`, `python3`, `git`, `tar`, `vim`, `tmux`, `glow`, `rsync`.
+   Aider est installé par uv, lui-même téléchargé et vérifié par SHA-256, dans
+   `~/.local/` de l'appelant.
 6. **Idempotence** : deuxième `up` consécutif = uniquement des `[OK]`, aucune
    modification, exit 0.
 7. **Synchrone** : aucune installation en arrière-plan. Chaque action est
@@ -98,7 +101,7 @@ ai-local/
 │   ├── 10-vfio.sh        configuration noyau VFIO (exit 2 = reboot requis)
 │   ├── 20-network.sh     bridge, TAP, NAT, forwarding (éphémère)
 │   ├── 30-app.sh         synchronise le compose et installe l'app dans une VM
-│   ├── 30-aider.sh       installe uv + aider dans data/client/
+│   ├── 30-aider.sh       télécharge uv + aider dans ~/.local/
 │   └── 40-test.sh        validation de bout en bout
 ├── vm/
 │   ├── 10-image.sh       image Debian (SHA-512), une seule fois
@@ -112,7 +115,7 @@ ai-local/
 │   │   ├── ollama.yaml   compose Ollama (modèles en bind mount)
 │   │   └── openwebui.yaml compose Open WebUI (URL Ollama)
 │   └── cloud-init/       user-data, meta-data, network-config
-├── data/                 images, disques, seeds, UEFI, clés, client (gitignore)
+├── data/                 images, disques, seeds, UEFI, clés (gitignore)
 ├── logs/                 consoles et traces (gitignore)
 ├── run/                  pid, sockets QMP (gitignore)
 ├── OBJECTIFS.md
@@ -169,8 +172,10 @@ Debian 13, x86_64, VT-x, `/dev/kvm`, deux fonctions PCI présentes, ≥ 20 Gio
 libres, commandes et paquets requis. Installe si absent : `qemu-system-x86`,
 `qemu-utils`, `ovmf`, `cloud-image-utils`, `bridge-utils`, `iproute2`,
 `nftables`, `curl`, `openssh-client`, `initramfs-tools`, `grub2-common`,
-`python3`, `git`. Crée `data/vm`, `data/ssh`, `data/client`, `logs`, `run` et
-une clé ed25519 dans `data/ssh/`, propriété de l'appelant.
+`python3`, `git`, `vim`, `tmux`, `glow`, `rsync`. Crée `data/vm`, `data/ssh`,
+`logs`, `run` et une clé ed25519 dans `data/ssh/`, propriété de l'appelant.
+Vérifie `alias ll=` et `alias la=` dans `~/.bashrc` et n'ajoute que les alias
+manquants, sans jamais remplacer une définition existante.
 
 ### 6.2 `10-vfio.sh`
 
@@ -234,10 +239,10 @@ Si le fichier existe mais que l'empreinte diffère : échec, fichier préservé.
 
 ### 6.7 `host/30-aider.sh`
 
-Installe uv (version et SHA-256 épinglés) dans `data/client/uv/`, Python 3.12 et
-`aider-chat==0.86.2` dans `data/client/{python,tools,bin}`. Le lanceur
-`bin/aider-ollama` fixe `OLLAMA_API_BASE` et préfixe le modèle avec
-`ollama_chat/`. `--check` vérifie uv, aider, lanceur, API et modèle ;
+Installe uv (version et SHA-256 épinglés) dans `~/.local/bin/uv`, Python 3.12 et
+`aider-chat==0.86.2` sous `~/.local/{share/uv,bin}` de l'appelant. Rien n'est
+versionné. Le lanceur `bin/aider-ollama` fixe `OLLAMA_API_BASE` et préfixe le
+modèle avec `ollama_chat/`. `--check` vérifie uv, aider, lanceur, API et modèle ;
 `--status` est informatif et ne modifie rien.
 
 ### 6.8 `host/40-test.sh`
@@ -433,10 +438,11 @@ Réparations :
 | ADR-6 | Aucun fichier d'état ; l'état est observé | supprime les divergences marqueur/réalité |
 | ADR-7 | Reboot hôte jamais automatique ; reboot invité oui | l'administrateur garde la main |
 | ADR-8 | Provisioning en root SSH par clé, réseau privé | `adm` garde des droits étroits |
-| ADR-9 | aider installé dans `data/client/`, pas dans `$HOME` | aucune écriture hors dépôt |
+| ADR-9 | uv/aider téléchargés à l'installation dans `~/.local/` | pas de binaires dans le dépôt, installation rejouable |
 | ADR-10 | `gemma4:12b` par défaut | choix utilisateur ; tient sur 16 Gio de VRAM |
 | ADR-11 | `test` séparé de `check` | `check` rapide et local ; `test` coûteux et bout en bout |
 | ADR-12 | Commits directs sur `main`, pas de revue | le process avait dépassé le code |
+| ADR-13 | `vim`, `tmux`, `glow`, `rsync` et alias `ll`/`la` sur l'hôte | confort demandé, sans service ni binaire dans le dépôt |
 
 ## 14. Définition de terminé
 
@@ -448,5 +454,6 @@ Réparations :
 - [ ] `test` valide les quatre chemins (hôte→Ollama, WebUI→Ollama,
       hôte→WebUI, hôte→aider).
 - [ ] `up` sur système conforme n'affiche que des `[OK]`.
+- [ ] `vim`, `tmux`, `glow`, `rsync` présents et alias `ll`/`la` actifs.
 - [ ] `README.md` suffit à un administrateur qui n'a jamais lu le code.
 - [ ] `data/`, `logs/`, `run/` ignorés par Git.

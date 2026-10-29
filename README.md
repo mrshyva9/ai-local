@@ -12,8 +12,8 @@ hôte Debian 13
 
 Tout est rejouable : `up` ne fait que ce qui manque, sinon affiche `[OK]`.
 Les modèles, les données WebUI et les pilotes vivent dans les disques qcow2.
-L'hôte ne garde que la configuration noyau VFIO (GRUB, initramfs, modprobe) et
-le client aider dans `data/client/` (ignoré par Git).
+L'hôte ne garde que la configuration noyau VFIO (GRUB, initramfs, modprobe), les
+outils de confort et le client aider, installé dans `~/.local/` au moment du `up`.
 
 ## Prérequis
 
@@ -66,8 +66,15 @@ cd ~/mon-projet
 
 Le lanceur fixe `OLLAMA_API_BASE=http://10.0.10.10:11434` et préfixe le modèle
 avec `ollama_chat/` (sans ce préfixe, aider échoue avec « LLM Provider NOT
-provided »). L'installation (uv + Python 3.12 + aider) reste dans
-`data/client/`, jamais dans le `$HOME`.
+provided »). Rien n'est versionné : `up` télécharge uv, Python 3.12 et aider
+dans `~/.local/` de l'utilisateur qui lance sudo.
+
+## Outils de confort
+
+`up` installe `vim`, `tmux`, `glow` et `rsync` sur l'hôte. Les alias `ll` et
+`la` sont vérifiés dans `~/.bashrc` ; seuls les alias manquants sont ajoutés,
+une définition existante n'est jamais remplacée. Ouvrir un nouveau shell (ou
+`source ~/.bashrc`) pour les activer.
 
 ## Dépannage
 

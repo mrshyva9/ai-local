@@ -14,13 +14,17 @@ case "${1:-}" in
   *) die "usage : $0 [--check|--status]" ;;
 esac
 
-UV_BIN="${CLIENT}/uv/uv"
-AIDER_BIN="${CLIENT}/bin/aider"
+# uv et aider sont téléchargés à l'installation, dans le HOME de l'appelant.
+USER_HOME="$(getent passwd "$(caller_uid)" | cut -d: -f6)"
+[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || die "répertoire personnel introuvable"
+LOCAL_BIN="${USER_HOME}/.local/bin"
+UV_BIN="${LOCAL_BIN}/uv"
+AIDER_BIN="${LOCAL_BIN}/aider"
 WRAPPER="${ROOT}/bin/aider-ollama"
-export UV_PYTHON_INSTALL_DIR="${CLIENT}/python"
-export UV_TOOL_DIR="${CLIENT}/tools"
-export UV_TOOL_BIN_DIR="${CLIENT}/bin"
-export UV_CACHE_DIR="${CLIENT}/cache"
+export UV_PYTHON_INSTALL_DIR="${USER_HOME}/.local/share/uv/python"
+export UV_TOOL_DIR="${USER_HOME}/.local/share/uv/tools"
+export UV_TOOL_BIN_DIR="${LOCAL_BIN}"
+export UV_CACHE_DIR="${USER_HOME}/.cache/uv"
 
 uv_version() { "$UV_BIN" --version 2>/dev/null | awk '{print $2}'; }
 aider_version() { "$AIDER_BIN" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1; }
@@ -79,12 +83,12 @@ install_uv() {
     x86_64|amd64) arch="x86_64-unknown-linux-gnu" ;;
     *) die "architecture non gérée : $(uname -m)" ;;
   esac
-  install -d -m 0755 "${CLIENT}/uv"
   if [[ -x "$UV_BIN" ]] && [[ "$(uv_version)" == "$UV_VERSION" ]]; then
     ok "uv ${UV_VERSION} déjà installé"
     return 0
   fi
-  tmp="$(mktemp -d "${CLIENT}/uv.XXXXXX")"
+  install -d -m 0755 "$LOCAL_BIN"
+  tmp="$(mktemp -d "${LOCAL_BIN}/.uv.XXXXXX")"
   if ! curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
     -o "${tmp}/uv.tar.gz" \
     "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${arch}.tar.gz"; then
@@ -96,7 +100,7 @@ install_uv() {
   tar -xzf "${tmp}/uv.tar.gz" -C "$tmp"
   install -m 0755 "${tmp}/uv-${arch}/uv" "$UV_BIN"
   rm -rf -- "$tmp"
-  fait "uv ${UV_VERSION} installé dans ${CLIENT#${ROOT}/}"
+  fait "uv ${UV_VERSION} installé dans ${LOCAL_BIN}"
 }
 
 install_aider() {
@@ -104,12 +108,12 @@ install_aider() {
     ok "aider ${AIDER_VERSION} déjà installé"
     return 0
   fi
-  attente "installation de Python ${AIDER_PYTHON} et aider ${AIDER_VERSION}"
+  attente "téléchargement de Python ${AIDER_PYTHON} et aider ${AIDER_VERSION}"
   "$UV_BIN" python install "$AIDER_PYTHON" >/dev/null
   "$UV_BIN" tool install --force --python "$AIDER_PYTHON" "aider-chat==${AIDER_VERSION}" >/dev/null ||
     die "installation d'aider ${AIDER_VERSION} impossible"
   [[ -x "$AIDER_BIN" ]] || die "aider absent après installation"
-  fait "aider ${AIDER_VERSION} installé dans ${CLIENT#${ROOT}/}"
+  fait "aider ${AIDER_VERSION} installé dans ${LOCAL_BIN}"
 }
 
 install_uv
