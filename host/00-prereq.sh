@@ -53,30 +53,49 @@ if [[ -z "$free_kb" || "$free_kb" -lt $((20 * 1024 * 1024)) ]]; then
 fi
 
 # --- Commandes et paquets ---------------------------------------------------
-# En installation, les commandes ne sont vérifiées qu'après apt : une commande
-# absente avant installation n'est pas un échec, c'est la raison du paquet.
+# Observer avant d'agir : en check, un manque est un échec ; en up, il est
+# annoncé puis réévalué après installation. Seuls les manques restants
+# comptent dans le verdict final.
 missing_pkgs=()
 for package in "${PACKAGES[@]}"; do
   dpkg -s "$package" >/dev/null 2>&1 || missing_pkgs+=("$package")
 done
-if (( ${#missing_pkgs[@]} > 0 )); then
-  if (( CHECK )); then
-    bad "paquet(s) absent(s) : ${missing_pkgs[*]}"
-  else
+missing_cmds=()
+for command in "${COMMANDS[@]}"; do
+  has_command "$command" || missing_cmds+=("$command")
+done
+
+if (( CHECK )); then
+  (( ${#missing_pkgs[@]} == 0 )) || bad "paquet(s) absent(s) : ${missing_pkgs[*]}"
+  (( ${#missing_cmds[@]} == 0 )) || bad "commande(s) absente(s) : ${missing_cmds[*]}"
+else
+  if (( ${#missing_pkgs[@]} > 0 || ${#missing_cmds[@]} > 0 )); then
+    attente "${#missing_pkgs[@]} paquet(s) et ${#missing_cmds[@]} commande(s) à installer"
+  fi
+  if (( ${#missing_pkgs[@]} > 0 )); then
     require_root
-    attente "installation : ${missing_pkgs[*]}"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends "${missing_pkgs[@]}"
     fait "paquets installés"
   fi
-fi
 
-missing_cmds=()
-for command in "${COMMANDS[@]}"; do
-  has_command "$command" || missing_cmds+=("$command")
-done
-(( ${#missing_cmds[@]} == 0 )) || bad "commande(s) absente(s) : ${missing_cmds[*]}"
+  # Re-vérification : ne conserver que ce qui manque réellement après apt.
+  missing_pkgs=()
+  for package in "${PACKAGES[@]}"; do
+    dpkg -s "$package" >/dev/null 2>&1 || missing_pkgs+=("$package")
+  done
+  missing_cmds=()
+  for command in "${COMMANDS[@]}"; do
+    has_command "$command" || missing_cmds+=("$command")
+  done
+  if (( ${#missing_pkgs[@]} == 0 && ${#missing_cmds[@]} == 0 )); then
+    ok "paquets et commandes disponibles"
+  else
+    (( ${#missing_pkgs[@]} == 0 )) || bad "paquet(s) toujours absent(s) : ${missing_pkgs[*]}"
+    (( ${#missing_cmds[@]} == 0 )) || bad "commande(s) toujours absente(s) : ${missing_cmds[*]}"
+  fi
+fi
 
 # --- Clé SSH et répertoires de travail --------------------------------------
 uid="$(caller_uid)"
