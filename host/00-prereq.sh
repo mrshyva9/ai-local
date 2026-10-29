@@ -18,6 +18,17 @@ COMMANDS=(qemu-system-x86_64 qemu-img cloud-localds ssh curl ip brctl nft
 fail=0
 bad() { echec "$*"; fail=1; }
 
+# /usr/sbin et /sbin ne sont pas toujours dans le PATH d'un utilisateur non
+# root : check doit voir brctl/nft sans exiger sudo.
+has_command() {
+  local command="$1" dir
+  command -v "$command" >/dev/null 2>&1 && return 0
+  for dir in /usr/sbin /sbin /usr/bin /bin; do
+    [[ -x "${dir}/${command}" ]] && return 0
+  done
+  return 1
+}
+
 # --- Système ---------------------------------------------------------------
 if [[ -r /etc/os-release ]]; then
   # shellcheck disable=SC1091
@@ -42,12 +53,8 @@ if [[ -z "$free_kb" || "$free_kb" -lt $((20 * 1024 * 1024)) ]]; then
 fi
 
 # --- Commandes et paquets ---------------------------------------------------
-missing_cmds=()
-for command in "${COMMANDS[@]}"; do
-  command -v "$command" >/dev/null 2>&1 || missing_cmds+=("$command")
-done
-(( ${#missing_cmds[@]} == 0 )) || bad "commande(s) absente(s) : ${missing_cmds[*]}"
-
+# En installation, les commandes ne sont vérifiées qu'après apt : une commande
+# absente avant installation n'est pas un échec, c'est la raison du paquet.
 missing_pkgs=()
 for package in "${PACKAGES[@]}"; do
   dpkg -s "$package" >/dev/null 2>&1 || missing_pkgs+=("$package")
@@ -64,6 +71,12 @@ if (( ${#missing_pkgs[@]} > 0 )); then
     fait "paquets installés"
   fi
 fi
+
+missing_cmds=()
+for command in "${COMMANDS[@]}"; do
+  has_command "$command" || missing_cmds+=("$command")
+done
+(( ${#missing_cmds[@]} == 0 )) || bad "commande(s) absente(s) : ${missing_cmds[*]}"
 
 # --- Clé SSH et répertoires de travail --------------------------------------
 uid="$(caller_uid)"
