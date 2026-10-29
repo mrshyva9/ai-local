@@ -1,0 +1,14 @@
+version: 2
+ethernets:
+  nic0:
+    match:
+      macaddress: "__VM_MAC__"
+    set-name: ens3
+    dhcp4: false
+    addresses:
+      - __VM_CIDR__
+    routes:
+      - to: default
+        via: __BRIDGE_IP__
+    nameservers:
+      addresses: [__DNS1__, __DNS2__]

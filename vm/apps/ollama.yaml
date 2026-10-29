@@ -1,0 +1,18 @@
+services:
+  ollama:
+    image: __OLLAMA_IMAGE__
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "__VM_IP__:__OLLAMA_PORT__:11434"
+    volumes:
+      - __GUEST_HOME__/ollama/models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

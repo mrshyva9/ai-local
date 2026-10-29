@@ -1,0 +1,53 @@
+#cloud-config
+hostname: __VM_NAME__
+manage_etc_hosts: true
+ssh_pwauth: false
+disable_root: false
+
+users:
+  - name: __GUEST_USER__
+    gecos: Administrateur de la VM
+    primary_group: adm
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - qemu-guest-agent
+  - sudo
+  - openssh-server
+
+resize_rootfs: true
+
+write_files:
+  - path: /root/.ssh/authorized_keys
+    permissions: '0600'
+    content: |
+      __SSH_PUBKEY__
+  - path: /etc/sudoers.d/90-__PROJECT__-reboot
+    permissions: '0440'
+    content: |
+      __GUEST_USER__ ALL=(root) NOPASSWD: /usr/sbin/reboot
+  - path: /etc/ssh/sshd_config.d/90-__PROJECT__.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      PubkeyAuthentication yes
+      AllowUsers __GUEST_USER__ root
+
+runcmd:
+  - install -d -m 0700 /root/.ssh
+  - chmod 0600 /root/.ssh/authorized_keys
+  - visudo -cf /etc/sudoers.d/90-__PROJECT__-reboot
+  - systemctl enable --now qemu-guest-agent
+  - sshd -t
+  - systemctl reload ssh
+
+final_message: "__VM_NAME__ : cloud-init terminé en $UPTIME s."

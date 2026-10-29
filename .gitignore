@@ -1,0 +1,6 @@
+# Données lourdes et générées : jamais versionnées.
+data/
+logs/
+run/
+*.log
+.aider*

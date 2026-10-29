@@ -1,0 +1,12 @@
+services:
+  open-webui:
+    image: __WEBUI_IMAGE__
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "__VM_IP__:__WEBUI_PORT__:__WEBUI_INTERNAL_PORT__"
+    volumes:
+      - __GUEST_HOME__/openwebui/data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://__OLLAMA_IP__:__OLLAMA_PORT__
+      - OLLAMA_BASE_URLS=http://__OLLAMA_IP__:__OLLAMA_PORT__
