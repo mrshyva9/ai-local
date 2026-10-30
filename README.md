@@ -85,6 +85,8 @@ tail -n 100 logs/ollama-gpu-console.log
 tail -n 100 logs/openwebui-console.log
 ./bootstrap.sh ssh ollama
     docker ps -a; docker logs --tail 50 ollama; nvidia-smi
+    docker exec ollama ollama ps          # doit afficher 100% GPU
+    docker exec ollama nvidia-smi -L
 ./bootstrap.sh ssh webui
     docker ps -a; docker logs --tail 50 open-webui
 ls data/vm/*-seed-*.iso                    # seeds cloud-init, nommés par contenu
@@ -99,6 +101,7 @@ Réparations typiques, toutes suivies de `up` :
 | conteneur arrêté | `docker restart ollama` dans la VM, ou `up` |
 | VM arrêtée | `sudo ./bootstrap.sh up` |
 | modèle supprimé | `sudo ./bootstrap.sh up` (retélécharge) |
+| Ollama reste sur CPU (`ollama ps`) | `up` vérifie `libcuda1` et régénère le spec CDI |
 | pilote NVIDIA cassé | `up` réinstalle puis redémarre l'invité si nécessaire |
 | disque à refaire | arrêter, supprimer `data/vm/<vm>.qcow2`, `up` |
 

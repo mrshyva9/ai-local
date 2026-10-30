@@ -44,6 +44,35 @@ sys.exit(1)' "$MODEL"; then
   ok "réponse reçue : ${answer:0:80}"
 }
 
+test_ollama_gpu() {
+  STEP="test/ollama-gpu"
+  local sizes size vram
+  sizes="$(curl -fsS --max-time 15 "${API}/api/ps" | python3 -c 'import json,sys
+models = json.load(sys.stdin).get("models") or []
+if not models:
+    print("0 0")
+else:
+    m = max(models, key=lambda x: int(x.get("size_vram") or 0))
+    print(int(m.get("size") or 0), int(m.get("size_vram") or 0))' 2>/dev/null)" ||
+    { echec "GET /api/ps en échec"; return 1; }
+  [[ -n "$sizes" ]] || { echec "réponse /api/ps vide"; return 1; }
+  read -r size vram <<<"$sizes"
+  [[ "$size" =~ ^[0-9]+$ && "$vram" =~ ^[0-9]+$ ]] ||
+    { echec "tailles illisibles dans /api/ps"; return 1; }
+  if (( size == 0 )); then
+    echec "modèle absent de /api/ps"
+    return 1
+  elif (( vram == 0 )); then
+    echec "modèle chargé sans VRAM : Ollama utilise le CPU"
+    return 1
+  elif (( vram < size )); then
+    echec "offload partiel : ${vram}/${size} octets en VRAM ($(( vram * 100 / size )) %)"
+    return 1
+  else
+    ok "modèle entièrement sur GPU (${vram} octets en VRAM sur ${size})"
+  fi
+}
+
 test_webui_to_ollama() {
   STEP="test/webui→ollama"
   if timeout 30 ssh "${SSH_OPTS[@]}" "root@${WEBUI_IP}" \
@@ -104,7 +133,7 @@ test_aider() {
 }
 
 fail=0
-test_ollama || fail=1
+if test_ollama; then test_ollama_gpu || fail=1; else fail=1; fi
 test_webui_to_ollama || fail=1
 test_webui_health || fail=1
 test_aider || fail=1

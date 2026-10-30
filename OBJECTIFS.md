@@ -250,7 +250,8 @@ modèle avec `ollama_chat/`. `--check` vérifie uv, aider, lanceur, API et modè
 Sans root. Dans l'ordre, et arrêt au premier échec pour la lisibilité :
 
 1. hôte → `GET /api/version` puis `GET /api/tags` (modèle présent) ;
-2. hôte → `POST /api/generate` (réponse non vide) ;
+2. hôte → `POST /api/generate` (réponse non vide) puis `GET /api/ps`
+   (`size_vram == size`, donc le modèle tourne entièrement sur le GPU) ;
 3. conteneur `open-webui` → `OLLAMA_BASE_URL/api/tags` (via `docker exec`) ;
 4. hôte → `GET http://10.0.10.11:3000/health` (HTTP 200) ;
 5. aider en non interactif dans `data/test/aider` : réponse contenant `42`
@@ -281,11 +282,14 @@ Idempotent : docker actif + compose + groupe = `[OK]`.
 ### 7.3 `vm/guest/nvidia.sh` (root)
 
 Active `non-free`, installe `linux-image/headers-<cloud-amd64|amd64>`,
-`nvidia-driver`, `nvidia-smi`, `pciutils`. Installe
+`nvidia-driver`, `nvidia-smi`, `libcuda1`, `pciutils`. Installe
 `nvidia-container-toolkit` depuis son dépôt officiel, exécute
-`nvidia-ctk runtime configure --runtime=docker`, redémarre Docker. Si
-`nvidia-smi` échoue encore : exit **3** (l'hôte redémarre l'invité et réessaie
-une fois). Si le runtime nvidia reste absent : diagnostic et exit 1.
+`nvidia-ctk runtime configure --runtime=docker`, régénère le spec CDI
+`/var/run/cdi/nvidia.yaml`, redémarre Docker. `libcuda1` est indispensable :
+sans lui `nvidia-smi` fonctionne mais Ollama ne voit aucun backend CUDA et
+retombe sur CPU. Si `nvidia-smi` échoue encore : exit **3** (l'hôte redémarre
+l'invité et réessaie une fois). Si le runtime ou le spec CDI reste incomplet :
+diagnostic et exit 1.
 
 ### 7.4 `vm/guest/ollama.sh` (root)
 
@@ -309,8 +313,9 @@ services:
               capabilities: [gpu]
 ```
 
-`docker compose up -d`, attente API + `nvidia-smi` dans le conteneur (180 s).
-`AILOCAL_RECREATE=1` force `--force-recreate` quand le compose a changé.
+`docker compose up -d`, attente API + `nvidia-smi` **et** `libcuda.so.1` dans
+le conteneur (180 s). `AILOCAL_RECREATE=1` ou un conteneur sans CUDA force
+`--force-recreate` quand le compose ou l'accès GPU a changé.
 
 ### 7.5 `vm/guest/openwebui.sh` (root)
 
