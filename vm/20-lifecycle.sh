@@ -112,7 +112,11 @@ start() {
     die "TAP ${TAP} absent : lancer d'abord host/20-network.sh"
   install -d -m 0755 "$RUN" "$LOGS" "$DATA"
   prepare
-  if running; then ok "VM ${NAME} déjà démarrée (PID $(<"$PIDFILE"))"; return 0; fi
+  if running; then
+    chmod 0644 "$PIDFILE"
+    ok "VM ${NAME} déjà démarrée (PID $(<"$PIDFILE"))"
+    return 0
+  fi
   if [[ -e "$PIDFILE" || -e "$QMP" ]]; then
     rm -f -- "$PIDFILE"
     [[ -S "$QMP" ]] && rm -f -- "$QMP"
@@ -140,6 +144,7 @@ start() {
     die "QEMU n'a pas démarré ; voir ${CONSOLE#${ROOT}/}"
   fi
   running || die "QEMU a rendu la main sans processus ${NAME} ; voir ${CONSOLE#${ROOT}/}"
+  chmod 0644 "$PIDFILE"
   fait "VM ${NAME} démarrée (PID $(<"$PIDFILE"))"
   wait_ssh
 }
