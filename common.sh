@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Sortie contractuelle et aides minimales.
-# Interdit ici : redirection globale, trap, fonction d'installation.
+# Contractual output and minimal helpers.
+# Forbidden here: global redirection, trap, install function.
 
-STEP="${STEP:-général}"
+STEP="${STEP:-general}"
 
 ok()      { printf '[%s] [OK]      %s\n' "$STEP" "$*"; }
-fait()    { printf '[%s] [FAIT]    %s\n' "$STEP" "$*"; }
-attente() { printf '[%s] [ATTENTE] %s\n' "$STEP" "$*"; }
-saute()   { printf '[%s] [SAUTÉ]   %s\n' "$STEP" "$*"; }
-echec()   { printf '[%s] [ÉCHEC]   %s\n' "$STEP" "$*"; }
-result()  { printf '\nRésultat : %s\n' "$1"; }
+fait()    { printf '[%s] [DONE]    %s\n' "$STEP" "$*"; }
+attente() { printf '[%s] [WAIT]    %s\n' "$STEP" "$*"; }
+saute()   { printf '[%s] [SKIP]    %s\n' "$STEP" "$*"; }
+echec()   { printf '[%s] [FAIL]    %s\n' "$STEP" "$*"; }
+result()  { printf '\nResult: %s\n' "$1"; }
 die()     { echec "$*"; exit 1; }
 
 require_root() {
-  [[ "${EUID}" -eq 0 ]] || die "lancer avec sudo"
+  [[ "${EUID}" -eq 0 ]] || die "run with sudo"
 }
 
-# Exécute une commande en tant qu'appelant (utile quand le script tourne en root).
+# Run a command as the calling user (useful when the script runs as root).
 as_caller() {
   local uid name home
   uid="$(caller_uid)"

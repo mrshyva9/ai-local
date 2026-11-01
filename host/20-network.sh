@@ -3,22 +3,22 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/config.sh"
-STEP="réseau"
+STEP="network"
 source "${ROOT}/common.sh"
 
 MODE="${1:-up}"
 case "$MODE" in
   --check|--down) ;;
   up|"") MODE="up" ;;
-  *) die "usage : $0 [--check|--down]" ;;
+  *) die "usage: $0 [--check|--down]" ;;
 esac
 
 WAN=""
 if [[ "$MODE" != "--down" ]]; then
   WAN="${WAN_INTERFACE:-$(ip -4 route show default | awk 'NR == 1 {print $5}')}"
-  [[ "$WAN" =~ ^[[:alnum:]_.:-]+$ ]] || die "interface WAN introuvable (définir WAN_INTERFACE)"
-  [[ -d "/sys/class/net/${WAN}" ]] || die "interface WAN absente : ${WAN}"
-  [[ "$WAN" != "$BRIDGE" ]] || die "interface WAN incorrecte : ${WAN}"
+  [[ "$WAN" =~ ^[[:alnum:]_.:-]+$ ]] || die "WAN interface not found (set WAN_INTERFACE)"
+  [[ -d "/sys/class/net/${WAN}" ]] || die "WAN interface missing: ${WAN}"
+  [[ "$WAN" != "$BRIDGE" ]] || die "incorrect WAN interface: ${WAN}"
 fi
 
 VM_IPS="$(printf '%s, ' "${VM_IP[@]}")"
@@ -61,19 +61,19 @@ if [[ "$MODE" == "--down" ]]; then
   require_root
   nft delete table inet "$NFT_FWD" 2>/dev/null || true
   nft delete table ip "$NFT_NAT" 2>/dev/null || true
-  fait "règles nftables retirées"
+  fait "nftables rules removed"
   for vm in "${VMS[@]}"; do
     tap="${VM_TAP[$vm]}"
     if ip link show "$tap" >/dev/null 2>&1; then
       ip link del "$tap"
-      fait "TAP retiré : ${tap}"
+      fait "TAP removed: ${tap}"
     fi
   done
   if ip link show "$BRIDGE" >/dev/null 2>&1; then
     ip link del "$BRIDGE"
-    fait "bridge retiré : ${BRIDGE}"
+    fait "bridge removed: ${BRIDGE}"
   fi
-  ok "réseau privé retiré"
+  ok "private network removed"
   exit 0
 fi
 
@@ -83,22 +83,22 @@ if [[ "$MODE" == "--check" ]]; then
     ip -4 addr show dev "$BRIDGE" | grep -qF "${BRIDGE_IP}/"; then
     ok "bridge ${BRIDGE} ${BRIDGE_IP}/${SUBNET_PREFIX}"
   else
-    echec "bridge ${BRIDGE} absent ou sans adresse"; fail=1
+    echec "bridge ${BRIDGE} missing or without address"; fail=1
   fi
   for vm in "${VMS[@]}"; do
     tap="${VM_TAP[$vm]}"
     if ip link show "$tap" >/dev/null 2>&1 &&
       [[ "$(readlink -f "/sys/class/net/${tap}/master" 2>/dev/null)" == "$(readlink -f "/sys/class/net/${BRIDGE}")" ]]; then
-      ok "TAP ${tap} rattaché"
+      ok "TAP ${tap} attached"
     else
-      echec "TAP ${tap} absent ou non rattaché"; fail=1
+      echec "TAP ${tap} missing or not attached"; fail=1
     fi
   done
-  [[ "$(< /proc/sys/net/ipv4/ip_forward)" == "1" ]] || { echec "ip_forward désactivé"; fail=1; }
+  [[ "$(< /proc/sys/net/ipv4/ip_forward)" == "1" ]] || { echec "ip_forward disabled"; fail=1; }
   if [[ "${EUID}" -eq 0 ]]; then
-    if nft_rules_ok; then ok "règles nftables conformes"; else echec "règles nftables absentes ou périmées"; fail=1; fi
+    if nft_rules_ok; then ok "nftables rules compliant"; else echec "nftables rules missing or stale"; fail=1; fi
   else
-    saute "contrôle nftables (root requis)"
+    saute "nftables check (root required)"
   fi
   (( fail == 0 )) || exit 1
   exit 0
@@ -107,46 +107,46 @@ fi
 require_root
 
 if ip link show "$BRIDGE" >/dev/null 2>&1; then
-  [[ -d "/sys/class/net/${BRIDGE}/bridge" ]] || die "${BRIDGE} existe mais n'est pas un bridge"
-  ok "bridge ${BRIDGE} présent"
+  [[ -d "/sys/class/net/${BRIDGE}/bridge" ]] || die "${BRIDGE} exists but is not a bridge"
+  ok "bridge ${BRIDGE} present"
 else
   brctl addbr "$BRIDGE"
-  fait "bridge créé : ${BRIDGE}"
+  fait "bridge created: ${BRIDGE}"
 fi
 
 if ip -4 addr show dev "$BRIDGE" | grep -qF "${BRIDGE_IP}/"; then
-  ok "adresse ${BRIDGE_IP}/${SUBNET_PREFIX} présente"
+  ok "address ${BRIDGE_IP}/${SUBNET_PREFIX} present"
 else
   ip address add "${BRIDGE_IP}/${SUBNET_PREFIX}" dev "$BRIDGE"
-  fait "adresse ${BRIDGE_IP}/${SUBNET_PREFIX} ajoutée"
+  fait "address ${BRIDGE_IP}/${SUBNET_PREFIX} added"
 fi
 ip link set "$BRIDGE" up
 
 for vm in "${VMS[@]}"; do
   tap="${VM_TAP[$vm]}"
   if ip link show "$tap" >/dev/null 2>&1; then
-    [[ -e "/sys/class/net/${tap}/tun_flags" ]] || die "${tap} existe mais n'est pas un TAP"
+    [[ -e "/sys/class/net/${tap}/tun_flags" ]] || die "${tap} exists but is not a TAP"
   else
     ip tuntap add dev "$tap" mode tap user root
-    fait "TAP créé : ${tap}"
+    fait "TAP created: ${tap}"
   fi
   if [[ "$(readlink -f "/sys/class/net/${tap}/master" 2>/dev/null)" != "$(readlink -f "/sys/class/net/${BRIDGE}")" ]]; then
     brctl addif "$BRIDGE" "$tap"
-    fait "TAP rattaché : ${tap}"
+    fait "TAP attached: ${tap}"
   fi
   ip link set "$tap" up
 done
 
 if [[ "$(< /proc/sys/net/ipv4/ip_forward)" == "1" ]]; then
-  ok "ip_forward actif"
+  ok "ip_forward active"
 else
   printf '1\n' >/proc/sys/net/ipv4/ip_forward
-  fait "ip_forward activé"
+  fait "ip_forward enabled"
 fi
 
 if nft_rules_ok; then
-  ok "règles nftables conformes"
+  ok "nftables rules compliant"
 else
   write_nft
-  fait "règles nftables écrites (NAT via ${WAN})"
+  fait "nftables rules written (NAT via ${WAN})"
 fi

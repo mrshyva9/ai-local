@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/config.sh"
-STEP="hôte/prérequis"
+STEP="host/prereq"
 source "${ROOT}/common.sh"
 
 CHECK=0
@@ -18,8 +18,8 @@ COMMANDS=(qemu-system-x86_64 qemu-img cloud-localds ssh curl ip brctl nft
 fail=0
 bad() { echec "$*"; fail=1; }
 
-# /usr/sbin et /sbin ne sont pas toujours dans le PATH d'un utilisateur non
-# root : check doit voir brctl/nft sans exiger sudo.
+# /usr/sbin and /sbin are not always in a non-root user's PATH:
+# check must see brctl/nft without requiring sudo.
 has_command() {
   local command="$1" dir
   command -v "$command" >/dev/null 2>&1 && return 0
@@ -29,33 +29,33 @@ has_command() {
   return 1
 }
 
-# --- Système ---------------------------------------------------------------
+# --- System ---------------------------------------------------------------
 if [[ -r /etc/os-release ]]; then
   # shellcheck disable=SC1091
   . /etc/os-release
-  [[ "${ID:-}" == "debian" ]] || bad "Debian attendu (détecté : ${ID:-inconnu})"
-  [[ "${VERSION_ID:-}" == "13" ]] || bad "Debian 13 attendu (détecté : ${VERSION_ID:-inconnu})"
+  [[ "${ID:-}" == "debian" ]] || bad "Debian expected (detected: ${ID:-unknown})"
+  [[ "${VERSION_ID:-}" == "13" ]] || bad "Debian 13 expected (detected: ${VERSION_ID:-unknown})"
 else
-  bad "/etc/os-release absent"
+  bad "/etc/os-release missing"
 fi
-[[ "$(uname -m)" == "x86_64" ]] || bad "x86_64 attendu (détecté : $(uname -m))"
-grep -qw vmx /proc/cpuinfo || bad "VT-x absent (vérifier le BIOS/UEFI)"
-[[ -c /dev/kvm ]] || bad "/dev/kvm absent"
+[[ "$(uname -m)" == "x86_64" ]] || bad "x86_64 expected (detected: $(uname -m))"
+grep -qw vmx /proc/cpuinfo || bad "VT-x missing (check the BIOS/UEFI)"
+[[ -c /dev/kvm ]] || bad "/dev/kvm missing"
 
 for address in "$GPU_VIDEO" "$GPU_AUDIO"; do
-  [[ -e "/sys/bus/pci/devices/${address}" ]] || bad "GPU absent : ${address}"
+  [[ -e "/sys/bus/pci/devices/${address}" ]] || bad "GPU missing: ${address}"
 done
 
-# --- Espace disque ----------------------------------------------------------
+# --- Disk space -------------------------------------------------------------
 free_kb="$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')"
 if [[ -z "$free_kb" || "$free_kb" -lt $((20 * 1024 * 1024)) ]]; then
-  bad "moins de 20 Gio libres sur ${ROOT}"
+  bad "less than 20 GiB free on ${ROOT}"
 fi
 
-# --- Commandes et paquets ---------------------------------------------------
-# Observer avant d'agir : en check, un manque est un échec ; en up, il est
-# annoncé puis réévalué après installation. Seuls les manques restants
-# comptent dans le verdict final.
+# --- Commands and packages --------------------------------------------------
+# Observe before acting: in check mode, a missing item is a failure; in up
+# mode, it is announced then re-evaluated after installation. Only remaining
+# gaps count in the final verdict.
 missing_pkgs=()
 for package in "${PACKAGES[@]}"; do
   dpkg -s "$package" >/dev/null 2>&1 || missing_pkgs+=("$package")
@@ -66,21 +66,21 @@ for command in "${COMMANDS[@]}"; do
 done
 
 if (( CHECK )); then
-  (( ${#missing_pkgs[@]} == 0 )) || bad "paquet(s) absent(s) : ${missing_pkgs[*]}"
-  (( ${#missing_cmds[@]} == 0 )) || bad "commande(s) absente(s) : ${missing_cmds[*]}"
+  (( ${#missing_pkgs[@]} == 0 )) || bad "missing package(s): ${missing_pkgs[*]}"
+  (( ${#missing_cmds[@]} == 0 )) || bad "missing command(s): ${missing_cmds[*]}"
 else
   if (( ${#missing_pkgs[@]} > 0 || ${#missing_cmds[@]} > 0 )); then
-    attente "${#missing_pkgs[@]} paquet(s) et ${#missing_cmds[@]} commande(s) à installer"
+    attente "${#missing_pkgs[@]} package(s) and ${#missing_cmds[@]} command(s) to install"
   fi
   if (( ${#missing_pkgs[@]} > 0 )); then
     require_root
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends "${missing_pkgs[@]}"
-    fait "paquets installés"
+    fait "packages installed"
   fi
 
-  # Re-vérification : ne conserver que ce qui manque réellement après apt.
+  # Re-check: keep only what is really missing after apt.
   missing_pkgs=()
   for package in "${PACKAGES[@]}"; do
     dpkg -s "$package" >/dev/null 2>&1 || missing_pkgs+=("$package")
@@ -90,78 +90,78 @@ else
     has_command "$command" || missing_cmds+=("$command")
   done
   if (( ${#missing_pkgs[@]} == 0 && ${#missing_cmds[@]} == 0 )); then
-    ok "paquets et commandes disponibles"
+    ok "packages and commands available"
   else
-    (( ${#missing_pkgs[@]} == 0 )) || bad "paquet(s) toujours absent(s) : ${missing_pkgs[*]}"
-    (( ${#missing_cmds[@]} == 0 )) || bad "commande(s) toujours absente(s) : ${missing_cmds[*]}"
+    (( ${#missing_pkgs[@]} == 0 )) || bad "package(s) still missing: ${missing_pkgs[*]}"
+    (( ${#missing_cmds[@]} == 0 )) || bad "command(s) still missing: ${missing_cmds[*]}"
   fi
 fi
 
-# --- Clé SSH et répertoires de travail --------------------------------------
+# --- SSH key and working directories ----------------------------------------
 uid="$(caller_uid)"
 gid="$(caller_gid)"
 USER_HOME="$(getent passwd "$uid" | cut -d: -f6)"
-[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || bad "répertoire personnel introuvable pour l'uid ${uid}"
+[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || bad "home directory not found for uid ${uid}"
 for dir in "$DATA" "$KEYS" "$LOGS" "$RUN"; do
   if [[ ! -d "$dir" ]]; then
     if (( CHECK )); then
-      bad "répertoire absent : ${dir#"$ROOT"/}"
+      bad "directory missing: ${dir#"$ROOT"/}"
     else
       require_root
       install -d -m 0755 -o "$uid" -g "$gid" "$dir"
       if [[ "$dir" == "$KEYS" ]]; then chmod 0700 "$dir"; fi
-      fait "répertoire créé : ${dir#"$ROOT"/}"
+      fait "directory created: ${dir#"$ROOT"/}"
     fi
   elif (( ! CHECK )) && [[ "$(stat -c '%u' "$dir")" != "$uid" ]]; then
     require_root
     chown "$uid:$gid" "$dir"
-    fait "propriétaire corrigé : ${dir#"$ROOT"/}"
+    fait "owner fixed: ${dir#"$ROOT"/}"
   fi
 done
 
 if [[ ! -f "${KEYS}/id_ed25519" ]]; then
   if (( CHECK )); then
-    bad "clé SSH absente : data/ssh/id_ed25519"
+    bad "SSH key missing: data/ssh/id_ed25519"
   else
     require_root
     as_caller ssh-keygen -q -t ed25519 -N '' -C "ai-local" -f "${KEYS}/id_ed25519"
     chmod 0600 "${KEYS}/id_ed25519"
     chmod 0644 "${KEYS}/id_ed25519.pub"
-    fait "clé SSH générée"
+    fait "SSH key generated"
   fi
 elif [[ ! -f "${KEYS}/id_ed25519.pub" ]]; then
-  bad "clé publique absente : data/ssh/id_ed25519.pub"
+  bad "public key missing: data/ssh/id_ed25519.pub"
 fi
 
 if [[ ! -f "${KEYS}/known_hosts" ]]; then
   if (( CHECK )); then
-    bad "data/ssh/known_hosts absent"
+    bad "data/ssh/known_hosts missing"
   else
     require_root
     install -m 0644 -o "$uid" -g "$gid" /dev/null "${KEYS}/known_hosts"
-    fait "known_hosts créé"
+    fait "known_hosts created"
   fi
 fi
 
-# Alias de confort : ne remplace jamais une définition existante de l'utilisateur.
+# Comfort aliases: never replace an existing user definition.
 ensure_aliases() {
   local rc="${USER_HOME}/.bashrc" missing=()
   if [[ ! -f "$rc" ]]; then
-    if (( CHECK )); then bad "fichier ${rc} absent"; return 0; fi
+    if (( CHECK )); then bad "file ${rc} missing"; return 0; fi
     install -m 0644 -o "$uid" -g "$gid" /dev/null "$rc"
   fi
   grep -qE '^[[:space:]]*alias ll=' "$rc" || missing+=("alias ll='ls -alF'")
   grep -qE '^[[:space:]]*alias la=' "$rc" || missing+=("alias la='ls -A'")
-  if (( ${#missing[@]} == 0 )); then ok "alias ll/la actifs dans ${rc}"; return 0; fi
-  if (( CHECK )); then bad "alias manquant(s) dans ${rc} : ${missing[*]}"; return 0; fi
-  printf '\n# ai-local : alias de confort\n' >>"$rc"
+  if (( ${#missing[@]} == 0 )); then ok "aliases ll/la active in ${rc}"; return 0; fi
+  if (( CHECK )); then bad "missing alias(es) in ${rc}: ${missing[*]}"; return 0; fi
+  printf '\n# ai-local: comfort aliases\n' >>"$rc"
   printf '%s\n' "${missing[@]}" >>"$rc"
   chown "$uid:$gid" "$rc"
-  fait "alias ajoutés à ${rc} : ${missing[*]}"
+  fait "aliases added to ${rc}: ${missing[*]}"
 }
 ensure_aliases
 
 if (( fail )); then
   exit 1
 fi
-ok "hôte prêt (Debian 13, VT-x, GPU, paquets, clé SSH)"
+ok "host ready (Debian 13, VT-x, GPU, packages, SSH key)"

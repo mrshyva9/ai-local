@@ -1,4 +1,4 @@
-# Données lourdes et générées : jamais versionnées.
+# Heavy generated data: never versioned.
 data/
 logs/
 run/

@@ -6,7 +6,7 @@ source "${ROOT}/config.sh"
 STEP="vm"
 source "${ROOT}/common.sh"
 
-usage() { die "usage : $0 up|check|status|down <${VMS[*]}>"; }
+usage() { die "usage: $0 up|check|status|down <${VMS[*]}>"; }
 MODE="${1:-}"; VM="${2:-}"
 [[ -n "${VM_NAME[$VM]:-}" ]] || usage
 case "$MODE" in up|check|status|down) ;; *) usage ;; esac
@@ -25,24 +25,22 @@ if [[ -f "${KEYS}/id_ed25519.pub" ]]; then PUBKEY="$(<"${KEYS}/id_ed25519.pub")"
 
 arg() { awk -v o="$2" '$0 == o { getline; print; exit }' <<<"$1"; }
 
-# 0 = ce PID est bien la VM attendue ; 1 = arrêtée ; die = PID suspect.
-# QEMU tourne en root, mais check et status s'utilisent sans root : kill -0 et
-# la lecture de /proc/<pid>/exe sont refusés (EPERM) à un autre utilisateur.
-# /proc/<pid> et /proc/<pid>/cmdline restent, eux, lisibles par tous.
+# 0 = expected VM; 1 = stopped; die = suspicious PID.
+# QEMU runs as root: use /proc/<pid> and cmdline (kill -0 and /proc/<pid>/exe need root).
 running() {
   local pid cmd argv0
   [[ -f "$PIDFILE" ]] || return 1
   pid="$(<"$PIDFILE")"
-  [[ "$pid" =~ ^[0-9]+$ ]] || die "PID invalide dans ${PIDFILE}"
+  [[ "$pid" =~ ^[0-9]+$ ]] || die "invalid PID in ${PIDFILE}"
   [[ -d "/proc/${pid}" ]] || return 1
   cmd="$(tr '\0' '\n' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
-  # Un zombie n'a plus de ligne de commande : il ne fait pas tourner la VM.
+  # A zombie has no command line left: it is not running the VM.
   [[ -n "$cmd" ]] || return 1
   argv0="${cmd%%$'\n'*}"
   [[ "${argv0##*/}" == "qemu-system-x86_64" ]] ||
-    die "le PID ${pid} n'est pas QEMU ; intervention manuelle requise"
+    die "PID ${pid} is not QEMU; manual intervention required"
   [[ "$(arg "$cmd" -name)" == "$NAME" && "$(arg "$cmd" -pidfile)" == "$PIDFILE" ]] ||
-    die "le PID ${pid} n'est pas la VM ${NAME} ; intervention manuelle requise"
+    die "PID ${pid} is not VM ${NAME}; manual intervention required"
   return 0
 }
 
@@ -54,14 +52,14 @@ render() {
     -e "s|__DNS2__|${DNS2}|g" "$1"
 }
 
-# L'instance-id et le nom du seed dérivent du contenu : seed stable = [OK].
+# The instance-id and seed name derive from content: stable seed = [OK].
 seed_id() { { render "${ROOT}/vm/cloud-init/user-data.yaml"; render "${ROOT}/vm/cloud-init/network-config.yaml"; render "${ROOT}/vm/cloud-init/meta-data.yaml"; } | sha256sum | cut -c1-16; }
 seed_path() { SEED="${DATA}/${NAME}-seed-$(seed_id).iso"; }
 
 build_seed() {
   seed_path
   if [[ -f "$SEED" ]]; then
-    ok "seed cloud-init à jour"
+    ok "cloud-init seed up to date"
     return 0
   fi
   local tmp id
@@ -75,58 +73,58 @@ build_seed() {
   install -m 0640 -o "$(caller_uid)" -g "$(caller_gid)" "${tmp}/seed.iso" "$SEED"
   find "$DATA" -maxdepth 1 -name "${NAME}-seed-*.iso" ! -name "$(basename "$SEED")" -delete
   rm -rf -- "$tmp"
-  fait "seed cloud-init régénéré"
+  fait "cloud-init seed regenerated"
 }
 
 prepare() {
-  [[ -f "$BASE" ]] || die "image de base absente : lancer vm/10-image.sh"
+  [[ -f "$BASE" ]] || die "base image missing: run vm/10-image.sh"
   if [[ ! -f "$DISK" ]]; then
     qemu-img create -q -f qcow2 -F qcow2 -b "$BASE" "$DISK" "${VM_DISK_GIB[$VM]}G"
     chown "$(caller_uid):$(caller_gid)" "$DISK"
     ssh-keygen -R "$IP" -f "${KEYS}/known_hosts" >/dev/null 2>&1 || true
-    fait "disque créé : ${DISK#${ROOT}/}"
+    fait "disk created: ${DISK#${ROOT}/}"
   fi
-  if [[ -f "$VARS" ]]; then ok "variables UEFI présentes"
-  else install -m 0644 -o "$(caller_uid)" -g "$(caller_gid)" "$OVMF_VARS_TEMPLATE" "$VARS"; fait "variables UEFI créées"; fi
+  if [[ -f "$VARS" ]]; then ok "UEFI variables present"
+  else install -m 0644 -o "$(caller_uid)" -g "$(caller_gid)" "$OVMF_VARS_TEMPLATE" "$VARS"; fait "UEFI variables created"; fi
   build_seed
 }
 
 wait_ssh() {
   local deadline=$((SECONDS + 300)) next=$((SECONDS + 30))
-  attente "attente de SSH sur ${IP}:22 (cloud-init)"
+  attente "waiting for SSH on ${IP}:22 (cloud-init)"
   while (( SECONDS < deadline )); do
     if timeout 12 ssh "${SSH_OPTS[@]}" "root@${IP}" true >/dev/null 2>&1; then
-      ok "SSH répond sur ${IP}"
-      attente "attente de la fin de cloud-init"
+      ok "SSH responds on ${IP}"
+      attente "waiting for cloud-init to finish"
       timeout 300 ssh "${SSH_OPTS[@]}" "root@${IP}" \
         "cloud-init status --wait >/dev/null 2>&1" ||
-        attente "cloud-init non terminé ou en erreur ; poursuite (les étapes invité sont rejouables)"
+        attente "cloud-init not finished or in error; continuing (guest steps are replayable)"
       return 0
     fi
     if (( SECONDS >= next )); then
-      attente "toujours en attente de SSH sur ${IP} (voir ${CONSOLE#${ROOT}/})"
+      attente "still waiting for SSH on ${IP} (see ${CONSOLE#${ROOT}/})"
       next=$((SECONDS + 30))
     fi
     sleep 5
   done
-  die "SSH ne répond pas sur ${IP} après 300 s ; la VM reste démarrée"
+  die "SSH does not respond on ${IP} after 300 s; the VM remains running"
 }
 
 start() {
   require_root
   ip link show "$TAP" >/dev/null 2>&1 ||
-    die "TAP ${TAP} absent : lancer d'abord host/20-network.sh"
+    die "TAP ${TAP} missing: run host/20-network.sh first"
   install -d -m 0755 "$RUN" "$LOGS" "$DATA"
   prepare
   if running; then
     chmod 0644 "$PIDFILE"
-    ok "VM ${NAME} déjà démarrée (PID $(<"$PIDFILE"))"
+    ok "VM ${NAME} already running (PID $(<"$PIDFILE"))"
     return 0
   fi
   if [[ -e "$PIDFILE" || -e "$QMP" ]]; then
     rm -f -- "$PIDFILE"
     [[ -S "$QMP" ]] && rm -f -- "$QMP"
-    [[ -e "$QMP" ]] && die "chemin QMP suspect : ${QMP}"
+    [[ -e "$QMP" ]] && die "suspicious QMP path: ${QMP}"
   fi
 
   local args=(-name "$NAME" -enable-kvm -machine q35,accel=kvm -cpu host
@@ -145,13 +143,13 @@ start() {
 
   : >"$CONSOLE"
   chown "$(caller_uid):$(caller_gid)" "$CONSOLE"
-  attente "démarrage de ${NAME} (${VM_VCPUS[$VM]} vCPU, $((VM_RAM_MIB[$VM] / 1024)) Gio)"
+  attente "starting ${NAME} (${VM_VCPUS[$VM]} vCPU, $((VM_RAM_MIB[$VM] / 1024)) GiB)"
   if ! qemu-system-x86_64 "${args[@]}"; then
-    die "QEMU n'a pas démarré ; voir ${CONSOLE#${ROOT}/}"
+    die "QEMU did not start; see ${CONSOLE#${ROOT}/}"
   fi
-  running || die "QEMU a rendu la main sans processus ${NAME} ; voir ${CONSOLE#${ROOT}/}"
+  running || die "QEMU returned without a ${NAME} process; see ${CONSOLE#${ROOT}/}"
   chmod 0644 "$PIDFILE"
-  fait "VM ${NAME} démarrée (PID $(<"$PIDFILE"))"
+  fait "VM ${NAME} started (PID $(<"$PIDFILE"))"
   wait_ssh
 }
 
@@ -168,7 +166,7 @@ for command in ("qmp_capabilities", "system_powerdown"):
     while True:
         answer = json.loads(f.readline())
         if "error" in answer:
-            raise SystemExit(f"QMP a refusé {command} : {answer['error']}")
+            raise SystemExit(f"QMP refused {command}: {answer['error']}")
         if "return" in answer:
             break
 PY
@@ -179,17 +177,17 @@ stop() {
   if ! running; then
     rm -f -- "$PIDFILE"
     [[ -S "$QMP" ]] && rm -f -- "$QMP"
-    ok "VM ${NAME} déjà arrêtée"
+    ok "VM ${NAME} already stopped"
     return 0
   fi
-  [[ -S "$QMP" ]] || die "socket QMP absente ; arrêt annulé"
+  [[ -S "$QMP" ]] || die "QMP socket missing; shutdown cancelled"
   local pid; pid="$(<"$PIDFILE")"
-  attente "arrêt ACPI de ${NAME}"
-  qmp_powerdown || die "QMP n'a pas accepté l'arrêt ; VM laissée en l'état"
+  attente "ACPI shutdown of ${NAME}"
+  qmp_powerdown || die "QMP did not accept the shutdown; VM left as is"
   local deadline=$((SECONDS + 120))
   while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do sleep 2; done
   if kill -0 "$pid" 2>/dev/null; then
-    attente "arrêt ACPI trop long, SIGTERM"
+    attente "ACPI shutdown too long, SIGTERM"
     kill -TERM "$pid"
     deadline=$((SECONDS + 15))
     while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do sleep 1; done
@@ -197,24 +195,24 @@ stop() {
   fi
   rm -f -- "$PIDFILE"
   [[ -S "$QMP" ]] && rm -f -- "$QMP"
-  fait "VM ${NAME} arrêtée (disque et modèles conservés)"
+  fait "VM ${NAME} stopped (disk and templates preserved)"
 }
 
 case "$MODE" in
   status)
-    # Sous-shell : un PID suspect ne doit jamais faire échouer `status`.
+    # Subshell: a suspicious PID must never make `status` fail.
     if (running) 2>/dev/null; then ok "VM ${NAME} active (PID $(<"$PIDFILE"), ${IP})"
-    else echec "VM ${NAME} arrêtée"; fi
+    else echec "VM ${NAME} stopped"; fi
     ;;
   check)
     fail=0
     seed_path
-    [[ -f "$BASE" ]] || { echec "image de base absente"; fail=1; }
-    [[ -f "$DISK" ]] || { echec "disque absent : ${DISK#${ROOT}/}"; fail=1; }
-    [[ -f "$SEED" ]] || { echec "seed absent : ${SEED#${ROOT}/}"; fail=1; }
-    [[ -f "$VARS" ]] || { echec "variables UEFI absentes : ${VARS#${ROOT}/}"; fail=1; }
-    running || { echec "VM ${NAME} non démarrée"; fail=1; }
-    (( fail == 0 )) && ok "VM ${NAME} conforme"
+    [[ -f "$BASE" ]] || { echec "base image missing"; fail=1; }
+    [[ -f "$DISK" ]] || { echec "disk missing: ${DISK#${ROOT}/}"; fail=1; }
+    [[ -f "$SEED" ]] || { echec "seed missing: ${SEED#${ROOT}/}"; fail=1; }
+    [[ -f "$VARS" ]] || { echec "UEFI variables missing: ${VARS#${ROOT}/}"; fail=1; }
+    running || { echec "VM ${NAME} not started"; fail=1; }
+    (( fail == 0 )) && ok "VM ${NAME} compliant"
     (( fail == 0 )) || exit 1
     ;;
   up) start ;;

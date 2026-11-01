@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/config.sh"
-STEP="hôte/vfio"
+STEP="host/vfio"
 source "${ROOT}/common.sh"
 
 CHECK=0
@@ -52,11 +52,11 @@ files_ok() {
 
 if (( CHECK )); then
   fail=0
-  files_ok || { echec "fichiers noyau/GRUB non conformes"; fail=1; }
-  group_ok || { echec "groupe IOMMU absent ou contenant d'autres périphériques"; fail=1; }
-  bound_ok || { echec "GPU non lié à vfio-pci (redémarrage en attente ?)"; fail=1; }
+  files_ok || { echec "kernel/GRUB files not compliant"; fail=1; }
+  group_ok || { echec "IOMMU group missing or containing other devices"; fail=1; }
+  bound_ok || { echec "GPU not bound to vfio-pci (reboot pending?)"; fail=1; }
   (( fail == 0 )) || exit 1
-  ok "GPU lié à vfio-pci, configuration noyau conforme"
+  ok "GPU bound to vfio-pci, kernel configuration compliant"
   exit 0
 fi
 
@@ -71,7 +71,7 @@ if ! cmp -s "$VFIO_CONF" <(printf '%s\n' "$vfio_content"); then
   printf '%s\n' "$vfio_content" >"$VFIO_CONF"
   chmod 0644 "$VFIO_CONF"
   changed=1
-  fait "options vfio-pci écrites"
+  fait "vfio-pci options written"
 fi
 
 if ! cmp -s "$BLACKLIST_CONF" <(printf 'blacklist nouveau\n'); then
@@ -81,14 +81,14 @@ if ! cmp -s "$BLACKLIST_CONF" <(printf 'blacklist nouveau\n'); then
   printf 'blacklist nouveau\n' >"$BLACKLIST_CONF"
   chmod 0644 "$BLACKLIST_CONF"
   changed=1
-  fait "nouveau blacklisté"
+  fait "nouveau blacklisted"
 fi
 
 for module in "${MODULES[@]}"; do
   if ! grep -qxF "$module" "$MODULES_FILE"; then
     printf '%s\n' "$module" >>"$MODULES_FILE"
     changed=1
-    fait "module ajouté à initramfs : ${module}"
+    fait "module added to initramfs: ${module}"
   fi
 done
 
@@ -99,26 +99,26 @@ if ! grep -q 'intel_iommu=on' "$GRUB_FILE" || ! grep -q 'iommu=pt' "$GRUB_FILE";
     sed -i -E "s/^(GRUB_CMDLINE_LINUX_DEFAULT=\"[^\"]*)\"/\1 ${param}\"/" "$GRUB_FILE"
   done
   grep -q 'intel_iommu=on' "$GRUB_FILE" && grep -q 'iommu=pt' "$GRUB_FILE" ||
-    die "GRUB_CMDLINE_LINUX_DEFAULT non reconnu dans ${GRUB_FILE}"
+    die "GRUB_CMDLINE_LINUX_DEFAULT not recognized in ${GRUB_FILE}"
   changed=1
-  fait "paramètres IOMMU ajoutés à GRUB"
+  fait "IOMMU parameters added to GRUB"
 fi
 
 if (( changed )); then
-  attente "régénération initramfs et GRUB"
+  attente "regenerating initramfs and GRUB"
   update-initramfs -u
   update-grub
-  fait "initramfs et GRUB régénérés"
+  fait "initramfs and GRUB regenerated"
 fi
 
 if ! group_ok; then
-  die "le groupe IOMMU de ${GPU_VIDEO} ne contient pas exactement ${GPU_VIDEO} et ${GPU_AUDIO} ; un redémarrage n'y changerait rien"
+  die "the IOMMU group of ${GPU_VIDEO} does not contain exactly ${GPU_VIDEO} and ${GPU_AUDIO}; a reboot would not change that"
 fi
 
 if bound_ok; then
-  ok "GPU lié à vfio-pci"
+  ok "GPU bound to vfio-pci"
   exit 0
 fi
 
-attente "redémarrage de l'hôte requis pour activer vfio-pci"
+attente "host reboot required to enable vfio-pci"
 exit 2

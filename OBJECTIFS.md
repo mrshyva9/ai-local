@@ -1,299 +1,299 @@
-# OBJECTIFS et CONTRAINTES — ai-local
+# OBJECTIVES and CONSTRAINTS — ai-local
 
-> **Statut : contrat.** Ce document fait foi. Le code s'y conforme ; en cas de
-> désaccord, c'est le code qui est en tort. Toute évolution du contrat se fait
-> dans le même commit que le code qui l'applique.
+> **Status: contract.** This document is authoritative. The code complies with
+> it; in case of disagreement, the code is at fault. Any change to the contract
+> is made in the same commit as the code that applies it.
 >
-> Version 2 — 2026-10-29. Remplace le contrat mono-VM de `ollama-gpu`.
+> Version 3 — 2026-11-01. English translation; output vocabulary is now English.
+> Replaces the single-VM contract of `ollama-gpu`.
 
-## 0. Lecture
+## 0. Reading order
 
-- Sections 1–3 : mission, non-objectifs, contraintes.
-- Sections 4–8 : arborescence, contrat observable, étapes, spécifications.
-- Sections 9–12 : preuve, règles agent, dépannage, risques.
-- Sections 13–14 : décisions et définition de terminé.
+- Sections 1–3: mission, non-goals, constraints.
+- Sections 4–8: tree, observable contract, steps, specifications.
+- Sections 9–12: proof, agent rules, troubleshooting, risks.
+- Sections 13–14: decisions and definition of done.
 
 ## 1. Mission
 
-Un dépôt unique, des scripts courts, un lanceur. `up` apporte sur un hôte
-Debian 13 une chaîne d'IA locale complète, rejouable et réparable à la main :
+A single repository, short scripts, one launcher. `up` brings to a Debian 13
+host a complete local AI chain, replayable and repairable by hand:
 
 ```
-aider (hôte) ──► Ollama (VM 1, GPU passthrough, conteneur)
-Open WebUI (VM 2, conteneur) ──► Ollama
+aider (host) ──► Ollama (VM 1, GPU passthrough, container)
+Open WebUI (VM 2, container) ──► Ollama
 ```
 
-Récits utilisateur :
+User stories:
 
-1. Tout tourne : `sudo ./bootstrap.sh up` n'affiche que des `[OK]`, exit 0.
-2. Après reboot de l'hôte : la même commande recrée réseau, VM, conteneurs,
-   conserve modèles et données, puis répond `Résultat : OK`.
-3. Hôte vierge : `up` configure VFIO, répond `REDÉMARRAGE REQUIS`, exit 2 ; après
-   reboot manuel, `up` termine.
-4. Sans jeton d'IA et sans lire le code, un administrateur diagnostique avec
-   `status`, `check`, `test` et les commandes de la section 11.
-5. `./bootstrap.sh test` prouve le chemin de bout en bout : hôte → API Ollama,
-   conteneur WebUI → Ollama, hôte → WebUI, hôte → aider → Ollama.
+1. Everything runs: `sudo ./bootstrap.sh up` prints only `[OK]`, exit 0.
+2. After a host reboot: the same command recreates the network, VMs and
+   containers, preserves models and data, then answers `Result: OK`.
+3. Fresh host: `up` configures VFIO, answers `REBOOT REQUIRED`, exit 2; after a
+   manual reboot, `up` completes.
+4. Without an AI token and without reading the code, an administrator diagnoses
+   with `status`, `check`, `test` and the commands in section 11.
+5. `./bootstrap.sh test` proves the end-to-end path: host → Ollama API,
+   WebUI container → Ollama, host → WebUI, host → aider → Ollama.
 
-## 2. Non-objectifs
+## 2. Non-goals
 
-Interdits, sauf décision explicite en section 13 :
+Forbidden, unless explicitly decided in section 13:
 
-- **Aucune persistance hôte** : pas de service systemd, démon, cron, logrotate,
-  fichier d'état, marqueur « installé ». Les seules exceptions sont la
-  configuration noyau VFIO (section 6.2), les paquets Debian demandés,
-  uv/aider dans `~/.local/` et les alias dans `~/.bashrc`.
-- **Pas de binaires dans le dépôt** : uv, Python 3.12 et aider sont téléchargés
-  à l'installation dans `~/.local/`. `data/` ne contient que les artefacts de
-  VM (images, disques, seeds, clés). Rien dans `/opt` ou `/usr/local` ; `/etc`
-  reste réservé à VFIO.
-- **Pas de troisième VM**, pas de reverse proxy, pas de multi-hôte, pas de
-  haute disponibilité, pas de Kubernetes.
-- **Pas de framework maison** : pas de bibliothèque de journalisation, pas de
-  redirection globale, pas de `trap ERR/EXIT`, pas de génération de YAML par
-  programme, pas de state file.
-- **Pas de process de revue** : pas de branche `report/*`, pas de hook, pas de
-  rapport, pas de statut à faire évoluer. Commits directs sur `main`.
-- **Aucun secret suivi par Git** : la clé SSH est générée dans `data/ssh/`
-  (ignoré).
+- **No host persistence**: no systemd service, daemon, cron, logrotate, state
+  file, "installed" marker. The only exceptions are the VFIO kernel
+  configuration (section 6.2), the requested Debian packages, uv/aider in
+  `~/.local/` and the aliases in `~/.bashrc`.
+- **No binaries in the repository**: uv, Python 3.12 and aider are downloaded
+  at install time into `~/.local/`. `data/` only contains VM artifacts (images,
+  disks, seeds, keys). Nothing in `/opt` or `/usr/local`; `/etc` stays reserved
+  for VFIO.
+- **No third VM**, no reverse proxy, no multi-host, no high availability, no
+  Kubernetes.
+- **No home-grown framework**: no logging library, no global redirection, no
+  `trap ERR/EXIT`, no programmatic YAML generation, no state file.
+- **No review process**: no `report/*` branch, no hook, no report, no evolving
+  status. Direct commits on `main`.
+- **No secret tracked by Git**: the SSH key is generated in `data/ssh/`
+  (ignored).
 
-## 3. Contraintes dures
+## 3. Hard constraints
 
-1. **Hôte** : Debian 13, x86_64, VT-x/VT-d, `/dev/kvm`, carte NVIDIA dédiée dont
-   les deux fonctions PCI sont seules dans leur groupe IOMMU, iGPU pour
-   l'affichage, ≥ 20 Gio libres.
-2. **Invités** : Debian 13 genericcloud figée par version et SHA-512, utilisateur
-   `adm`, clé SSH uniquement, IP fixe sur le réseau privé.
-3. **Arborescence imposée** (section 4). Aucun fichier hors de cette liste.
-4. **Taille** : ≤ 1700 lignes de shell au total (hors cloud-init), aucun script
-   de plus de 220 lignes, `common.sh` ≤ 30 lignes.
-5. **Dépendances hôte** : paquets de la section 6.1, `qemu-system-x86_64`,
+1. **Host**: Debian 13, x86_64, VT-x/VT-d, `/dev/kvm`, dedicated NVIDIA card
+   whose two PCI functions are alone in their IOMMU group, iGPU for display,
+   ≥ 20 GiB free.
+2. **Guests**: Debian 13 genericcloud pinned by version and SHA-512, user
+   `adm`, SSH key only, fixed IP on the private network.
+3. **Imposed tree** (section 4). No file outside this list.
+4. **Size**: ≤ 1700 lines of shell in total (excluding cloud-init), no script
+   longer than 220 lines, `common.sh` ≤ 30 lines.
+5. **Host dependencies**: packages from section 6.1, `qemu-system-x86_64`,
    `qemu-img`, `cloud-localds`, `ssh`, `curl`, `sha256sum`, `sha512sum`, `ip`,
    `brctl`, `nft`, `python3`, `git`, `tar`, `vim`, `tmux`, `glow`, `rsync`.
-   Aider est installé par uv, lui-même téléchargé et vérifié par SHA-256, dans
-   `~/.local/` de l'appelant.
-6. **Idempotence** : deuxième `up` consécutif = uniquement des `[OK]`, aucune
-   modification, exit 0.
-7. **Synchrone** : aucune installation en arrière-plan. Chaque action est
-   affichée pendant qu'elle s'exécute. Un Ctrl-C laisse un état reprenable.
-8. **L'état, c'est le système.** Aucun fichier de state. Les seuls artefacts
-   runtime sont `run/<vm>.pid`, `run/<vm>.qmp`, revalidés contre le processus
-   réel avant usage.
-9. **Français** pour les messages et la documentation.
-10. **Fichiers créés dans le dépôt** : propriété de l'appelant
-    (`SUDO_UID`/`SUDO_GID`), jamais `root:root` en dur. Les logs et données des
-    invités appartiennent à `adm` dans la VM.
-11. **Jamais de redémarrage automatique de l'hôte.** Les redémarrages d'invité
-    sont autorisés et attendus (pilote NVIDIA).
-12. **Réseau privé éphémère.** Créé par `up`, retiré par `down`.
+   Aider is installed by uv, itself downloaded and verified by SHA-256, into
+   the caller's `~/.local/`.
+6. **Idempotence**: second consecutive `up` = only `[OK]`, no change, exit 0.
+7. **Synchronous**: no background installation. Each action is printed while it
+   runs. A Ctrl-C leaves a resumable state.
+8. **State is the system.** No state file. The only runtime artifacts are
+   `run/<vm>.pid`, `run/<vm>.qmp`, revalidated against the real process before
+   use.
+9. **English** for messages and documentation.
+10. **Files created in the repository**: owned by the caller
+    (`SUDO_UID`/`SUDO_GID`), never hard-coded `root:root`. Guest logs and data
+    belong to `adm` in the VM.
+11. **Never reboot the host automatically.** Guest reboots are allowed and
+    expected (NVIDIA driver).
+12. **Ephemeral private network.** Created by `up`, removed by `down`.
 
-## 4. Arborescence
+## 4. Tree
 
 ```
 ai-local/
-├── bootstrap.sh          lanceur : up | check | status | down | test | ssh
-├── config.sh             paramètres : réseau, GPU, image, versions, modèle, VM
-├── common.sh             sortie contractuelle, root, appelant (≤ 30 lignes)
+├── bootstrap.sh          launcher: up | check | status | down | test | ssh
+├── config.sh             parameters: network, GPU, image, versions, model, VMs
+├── common.sh             contractual output, root, caller (≤ 30 lines)
 ├── bin/
-│   └── aider-ollama      lanceur aider (modèle ollama_chat/<modèle>)
+│   └── aider-ollama      aider launcher (model ollama_chat/<model>)
 ├── host/
-│   ├── 00-prereq.sh      contrôles hôte, paquets, clé SSH, répertoires
-│   ├── 10-vfio.sh        configuration noyau VFIO (exit 2 = reboot requis)
-│   ├── 20-network.sh     bridge, TAP, NAT, forwarding (éphémère)
-│   ├── 30-app.sh         synchronise le compose et installe l'app dans une VM
-│   ├── 30-aider.sh       télécharge uv + aider dans ~/.local/
-│   └── 40-test.sh        validation de bout en bout
+│   ├── 00-prereq.sh      host checks, packages, SSH key, directories
+│   ├── 10-vfio.sh        VFIO kernel configuration (exit 2 = reboot required)
+│   ├── 20-network.sh     bridge, TAP, NAT, forwarding (ephemeral)
+│   ├── 30-app.sh         syncs the compose and installs the app in a VM
+│   ├── 30-aider.sh       downloads uv + aider into ~/.local/
+│   └── 40-test.sh        end-to-end validation
 ├── vm/
-│   ├── 10-image.sh       image Debian (SHA-512), une seule fois
-│   ├── 20-lifecycle.sh   disque, seed, UEFI, QEMU, SSH, arrêt par QMP
+│   ├── 10-image.sh       Debian image (SHA-512), once only
+│   ├── 20-lifecycle.sh   disk, seed, UEFI, QEMU, SSH, shutdown via QMP
 │   ├── guest/
-│   │   ├── base.sh       Docker + compose, groupe adm
-│   │   ├── nvidia.sh     pilote NVIDIA + runtime Docker GPU
-│   │   ├── ollama.sh     conteneur Ollama + GPU
-│   │   └── openwebui.sh  conteneur Open WebUI
+│   │   ├── base.sh       Docker + compose, adm group
+│   │   ├── nvidia.sh     NVIDIA driver + Docker GPU runtime
+│   │   ├── ollama.sh     Ollama container + GPU
+│   │   └── openwebui.sh  Open WebUI container
 │   ├── apps/
-│   │   ├── ollama.yaml   compose Ollama (modèles en bind mount)
-│   │   └── openwebui.yaml compose Open WebUI (URL Ollama)
+│   │   ├── ollama.yaml   Ollama compose (models in a bind mount)
+│   │   └── openwebui.yaml Open WebUI compose (Ollama URL)
 │   └── cloud-init/       user-data, meta-data, network-config
-├── data/                 images, disques, seeds, UEFI, clés (gitignore)
-├── logs/                 consoles et traces (gitignore)
-├── run/                  pid, sockets QMP (gitignore)
+├── data/                 images, disks, seeds, UEFI, keys (gitignore)
+├── logs/                 consoles and traces (gitignore)
+├── run/                  pids, QMP sockets (gitignore)
 ├── OBJECTIFS.md
 └── README.md
 ```
 
-## 5. Contrat d'interface
+## 5. Interface contract
 
-### 5.1 Lanceur
+### 5.1 Launcher
 
-| Commande | Effet | Codes |
+| Command | Effect | Codes |
 |---|---|---|
-| `sudo ./bootstrap.sh up [vm...]` | converge tout, ou seulement les VM nommées | 0 OK, 1 échec, 2 reboot hôte requis |
-| `./bootstrap.sh check [vm...]` | lecture seule, ne modifie rien | 0 conforme, 1 non conforme |
-| `./bootstrap.sh status` | panorama hôte, VM, conteneurs, API, modèle | 0 toujours |
-| `sudo ./bootstrap.sh down [vm...\|all]` | arrêt propre, retrait réseau | 0 OK, 1 échec |
-| `./bootstrap.sh test` | validation de bout en bout | 0 OK, 1 échec |
-| `./bootstrap.sh ssh <ollama\|webui>` | session `adm` dans la VM | code SSH |
+| `sudo ./bootstrap.sh up [vm...]` | converge everything, or only the named VMs | 0 OK, 1 failure, 2 host reboot required |
+| `./bootstrap.sh check [vm...]` | read-only, changes nothing | 0 compliant, 1 non-compliant |
+| `./bootstrap.sh status` | overview of host, VMs, containers, API, model | 0 always |
+| `sudo ./bootstrap.sh down [vm...\|all]` | clean shutdown, network removal | 0 OK, 1 failure |
+| `./bootstrap.sh test` | end-to-end validation | 0 OK, 1 failure |
+| `./bootstrap.sh ssh <ollama\|webui>` | `adm` session in the VM | SSH code |
 
-`up [vm...]` avec un sous-ensemble ne démarre que ces VM (le réseau et l'image
-restent communs). `check` et `status` s'utilisent sans root ; les contrôles qui
-exigent root (`nft`) sont marqués `[SAUTÉ]` et n'invalident pas le résultat.
+`up [vm...]` with a subset only starts those VMs (the network and image remain
+shared). `check` and `status` are used without root; checks that require root
+(`nft`) are marked `[SKIP]` and do not invalidate the result.
 
-### 5.2 Scripts d'étape
+### 5.2 Step scripts
 
-- `host/NN-*.sh` et `vm/NN-*.sh` : `--check` (lecture seule, 0/1) ou converge ;
-  exécutables seuls, dans l'ordre.
-- `vm/20-lifecycle.sh` : `up|check|status|down <vm>`.
-- `host/30-app.sh` : `<vm>` (converge), `check <vm>`, `status <vm>`.
-- `host/30-aider.sh` : converge, `--check`, `--status`.
-- `10-vfio.sh` retourne **2** quand il a modifié la configuration noyau ; le
-  lanceur s'arrête et n'essaie pas la suite.
+- `host/NN-*.sh` and `vm/NN-*.sh`: `--check` (read-only, 0/1) or converge;
+  executable alone, in order.
+- `vm/20-lifecycle.sh`: `up|check|status|down <vm>`.
+- `host/30-app.sh`: `<vm>` (converge), `check <vm>`, `status <vm>`.
+- `host/30-aider.sh`: converge, `--check`, `--status`.
+- `10-vfio.sh` returns **2** when it has modified the kernel configuration; the
+  launcher stops and does not try the rest.
 
-### 5.3 Vocabulaire de sortie
+### 5.3 Output vocabulary
 
 ```
-[hôte/vfio]      [OK]      GPU déjà lié à vfio-pci
-[réseau]         [FAIT]    bridge ailocal0 créé (10.0.10.1/24)
-[invité/ollama]  [OK]      conteneur ollama actif, API et GPU conformes
-[test/aider]     [OK]      aider 0.86.2 a répondu via ollama_chat/gemma4:12b
-Résultat : OK
+[host/vfio]      [OK]      GPU already bound to vfio-pci
+[network]        [DONE]    bridge ailocal0 created (10.0.10.1/24)
+[guest/ollama]   [OK]      ollama container active, API and GPU compliant
+[test/aider]     [OK]      aider 0.86.2 responded via ollama_chat/gemma4:12b
+Result: OK
 ```
 
-Jetons : `[OK]` (déjà conforme), `[FAIT]` (modifié), `[ATTENTE]` (long),
-`[SAUTÉ]` (non applicable sans root), `[ÉCHEC]` (bloquant + diagnostic).
-Dernière ligne : `Résultat : OK` | `Résultat : REDÉMARRAGE REQUIS` |
-`Résultat : ÉCHEC`.
+Tokens: `[OK]` (already compliant), `[DONE]` (changed), `[WAIT]` (long),
+`[SKIP]` (not applicable without root), `[FAIL]` (blocking + diagnostics).
+Last line: `Result: OK` | `Result: REBOOT REQUIRED` | `Result: FAIL`.
 
-## 6. Étapes hôte
+## 6. Host steps
 
 ### 6.1 `00-prereq.sh`
 
-Debian 13, x86_64, VT-x, `/dev/kvm`, deux fonctions PCI présentes, ≥ 20 Gio
-libres, commandes et paquets requis. Installe si absent : `qemu-system-x86`,
+Debian 13, x86_64, VT-x, `/dev/kvm`, two PCI functions present, ≥ 20 GiB free,
+required commands and packages. Installs if missing: `qemu-system-x86`,
 `qemu-utils`, `ovmf`, `cloud-image-utils`, `bridge-utils`, `iproute2`,
 `nftables`, `curl`, `openssh-client`, `initramfs-tools`, `grub2-common`,
-`python3`, `git`, `vim`, `tmux`, `glow`, `rsync`. Crée `data/vm`, `data/ssh`,
-`logs`, `run` et une clé ed25519 dans `data/ssh/`, propriété de l'appelant.
-Vérifie `alias ll=` et `alias la=` dans `~/.bashrc` et n'ajoute que les alias
-manquants, sans jamais remplacer une définition existante.
+`python3`, `git`, `vim`, `tmux`, `glow`, `rsync`. Creates `data/vm`, `data/ssh`,
+`logs`, `run` and an ed25519 key in `data/ssh/`, owned by the caller. Checks
+`alias ll=` and `alias la=` in `~/.bashrc` and only adds missing aliases,
+never replacing an existing definition.
 
 ### 6.2 `10-vfio.sh`
 
-Garantit exactement :
+Guarantees exactly:
 
-- `/etc/modprobe.d/ai-local-vfio.conf` :
+- `/etc/modprobe.d/ai-local-vfio.conf`:
   `options vfio-pci ids=10de:2805,10de:22bd`,
-  `softdep nouveau pre: vfio-pci`, `softdep snd_hda_intel pre: vfio-pci` ;
-- `/etc/modprobe.d/ai-local-blacklist.conf` : `blacklist nouveau` ;
-- `vfio`, `vfio_pci`, `vfio_iommu_type1` dans `/etc/initramfs-tools/modules` ;
-- `intel_iommu=on iommu=pt` dans `GRUB_CMDLINE_LINUX_DEFAULT`.
+  `softdep nouveau pre: vfio-pci`, `softdep snd_hda_intel pre: vfio-pci`;
+- `/etc/modprobe.d/ai-local-blacklist.conf`: `blacklist nouveau`;
+- `vfio`, `vfio_pci`, `vfio_iommu_type1` in `/etc/initramfs-tools/modules`;
+- `intel_iommu=on iommu=pt` in `GRUB_CMDLINE_LINUX_DEFAULT`.
 
-Si un fichier change : sauvegarde unique `*.ai-local.bak`, `update-initramfs -u`,
-`update-grub`, puis exit 2. Si les deux fonctions sont déjà liées à `vfio-pci`
-et que le groupe IOMMU ne contient qu'elles : `[OK]`.
+If a file changes: single backup `*.ai-local.bak`, `update-initramfs -u`,
+`update-grub`, then exit 2. If both functions are already bound to `vfio-pci`
+and the IOMMU group contains only them: `[OK]`.
 
 ### 6.3 `20-network.sh`
 
-- bridge `ailocal0`, `10.0.10.1/24` ;
-- TAP `tap-ollama` et `tap-webui` (mode tap, root), rattachés, up ;
-- `net.ipv4.ip_forward=1` ;
-- table `nftables` : forward policy drop, établissement accepté, VM↔VM accepté,
-  `10.0.10.0/24` → WAN accepté ; masquerade vers l'interface par défaut.
+- bridge `ailocal0`, `10.0.10.1/24`;
+- TAP `tap-ollama` and `tap-webui` (tap mode, root), attached, up;
+- `net.ipv4.ip_forward=1`;
+- `nftables` table: forward policy drop, established accepted, VM↔VM accepted,
+  `10.0.10.0/24` → WAN accepted; masquerade to the default interface.
 
-Aucun service, aucun fichier persistant. `--down` retire règles, TAP et bridge.
+No service, no persistent file. `--down` removes rules, TAP and bridge.
 
 ### 6.4 `vm/10-image.sh`
 
-Image `debian-13-genericcloud-amd64-20261026-2643.qcow2` téléchargée depuis une
-URL versionnée, vérifiée SHA-512 à chaque passage, conservée dans `data/vm/`.
-Si le fichier existe mais que l'empreinte diffère : échec, fichier préservé.
+Image `debian-13-genericcloud-amd64-20261026-2643.qcow2` downloaded from a
+versioned URL, SHA-512 verified on every pass, kept in `data/vm/`. If the file
+exists but the checksum differs: failure, file preserved.
 
 ### 6.5 `vm/20-lifecycle.sh <vm>`
 
-- disque qcow2 à backing file, créé une fois, jamais redimensionné ;
-- `OVMF_VARS` copié une fois par VM ;
-- seed cloud-init reconstruit depuis `vm/cloud-init/*` (substitution `sed`) et
-  remplacé **seulement** si son contenu change ; instance-id dérivé du contenu ;
-- QEMU : vCPU/RAM de `config.sh`, UEFI 4M, disque virtio, seed CD-ROM, TAP,
-  MAC fixe, GPU `vfio-pci` pour `ollama` seulement, QMP et pidfile dans `run/`,
-  console dans `logs/`, `-daemonize` ;
-- validation du PID avant tout `[OK]` ou arrêt ; artefacts périmés nettoyés ;
-- attente SSH réelle (clé root), 300 s ;
-- `down` : ACPI par QMP, 120 s, puis SIGTERM/SIGKILL après revalidation.
+- qcow2 disk with a backing file, created once, never resized;
+- `OVMF_VARS` copied once per VM;
+- cloud-init seed rebuilt from `vm/cloud-init/*` (`sed` substitution) and
+  replaced **only** if its content changes; instance-id derived from content;
+- QEMU: vCPU/RAM from `config.sh`, 4M UEFI, virtio disk, seed CD-ROM, TAP,
+  fixed MAC, `vfio-pci` GPU for `ollama` only, QMP and pidfile in `run/`,
+  console in `logs/`, `-daemonize`;
+- PID validation before any `[OK]` or shutdown; stale artifacts cleaned up;
+- real SSH wait (root key), 300 s;
+- `down`: ACPI via QMP, 120 s, then SIGTERM/SIGKILL after revalidation.
 
 ### 6.6 `host/30-app.sh <vm>`
 
-1. vérifie SSH root ;
-2. exécute `vm/guest/base.sh` (Docker + compose + groupe `adm`) ;
-3. rend le compose depuis `vm/apps/<app>.yaml` avec les valeurs de `config.sh`,
-   compare son SHA-256 à la copie dans `/home/adm/<app>/compose.yaml`, le copie
-   si différent et demande alors une recréation du conteneur ;
-4. pour `ollama`, exécute `vm/guest/nvidia.sh` ; sur code 3, redémarre l'invité,
-   attend SSH, réessaie une fois ;
-5. exécute `vm/guest/<app>.sh` ;
-6. pour `ollama`, vérifie `MODEL` dans `/api/tags`, sinon
+1. checks root SSH;
+2. runs `vm/guest/base.sh` (Docker + compose + `adm` group);
+3. renders the compose from `vm/apps/<app>.yaml` with the values from
+   `config.sh`, compares its SHA-256 with the copy in
+   `/home/adm/<app>/compose.yaml`, copies it if different and then requests a
+   container recreation;
+4. for `ollama`, runs `vm/guest/nvidia.sh`; on code 3, reboots the guest, waits
+   for SSH, retries once;
+5. runs `vm/guest/<app>.sh`;
+6. for `ollama`, checks `MODEL` in `/api/tags`, otherwise
    `docker exec ollama ollama pull "$MODEL"`.
 
-`check` exécute les mêmes scripts en `--check` et compare le compose ;
-`status` affiche conteneur, API et modèle.
+`check` runs the same scripts with `--check` and compares the compose;
+`status` shows container, API and model.
 
 ### 6.7 `host/30-aider.sh`
 
-Installe uv (version et SHA-256 épinglés) dans `~/.local/bin/uv`, Python 3.12 et
-`aider-chat==0.86.2` sous `~/.local/{share/uv,bin}` de l'appelant. Rien n'est
-versionné. Le lanceur `bin/aider-ollama` fixe `OLLAMA_API_BASE` et préfixe le
-modèle avec `ollama_chat/`. `--check` vérifie uv, aider, lanceur, API et modèle ;
-`--status` est informatif et ne modifie rien.
+Installs uv (pinned version and SHA-256) into `~/.local/bin/uv`, Python 3.12 and
+`aider-chat==0.86.2` under the caller's `~/.local/{share/uv,bin}`. Nothing is
+versioned. The `bin/aider-ollama` launcher sets `OLLAMA_API_BASE` and prefixes
+the model with `ollama_chat/`. `--check` verifies uv, aider, launcher, API and
+model; `--status` is informational and changes nothing.
 
 ### 6.8 `host/40-test.sh`
 
-Sans root. Dans l'ordre, et arrêt au premier échec pour la lisibilité :
+Without root. In order, stopping at the first failure for readability:
 
-1. hôte → `GET /api/version` puis `GET /api/tags` (modèle présent) ;
-2. hôte → `POST /api/generate` (réponse non vide) puis `GET /api/ps`
-   (`size_vram == size`, donc le modèle tourne entièrement sur le GPU) ;
-3. conteneur `open-webui` → `OLLAMA_BASE_URL/api/tags` (via `docker exec`) ;
-4. hôte → `GET http://10.0.10.11:3000/health` (HTTP 200) ;
-5. aider en non interactif dans `data/test/aider` : réponse contenant `42`
-   (question `17 + 25`, dont les opérandes n'apparaissent pas dans la réponse
-   attendue), code 0.
+1. host → `GET /api/version` then `GET /api/tags` (model present);
+2. host → `POST /api/generate` (non-empty response) then `GET /api/ps`
+   (`size_vram == size`, so the model runs entirely on the GPU);
+3. `open-webui` container → `OLLAMA_BASE_URL/api/tags` (via `docker exec`);
+4. host → `GET http://10.0.10.11:3000/health` (HTTP 200);
+5. aider non-interactively in `data/test/aider`: response containing `42`
+   (question `17 + 25`, whose operands do not appear in the expected answer),
+   exit code 0.
 
-## 7. Spécification des invités
+## 7. Guest specification
 
-### 7.1 Compte et accès
+### 7.1 Account and access
 
-- utilisateur `adm`, clé SSH de l'hôte, pas de mot de passe ;
-- `adm` membre du groupe `docker` (créé par le paquet Docker) ;
-- `adm` peut lancer `docker`, `docker compose` et `sudo reboot` ;
-- règle unique `/etc/sudoers.d/90-ai-local-reboot` (0440, validée `visudo -c`) :
-  `adm ALL=(root) NOPASSWD: /usr/sbin/reboot` ; pas de `NOPASSWD: ALL` ;
-- provisioning : SSH **root** par clé, sur le réseau privé uniquement
-  (`PermitRootLogin prohibit-password`, `AllowUsers adm root`) ;
-- cloud-init : image figée, `resize_rootfs`, `qemu-guest-agent`, `curl`,
+- user `adm`, SSH key from the host, no password;
+- `adm` member of the `docker` group (created by the Docker package);
+- `adm` can run `docker`, `docker compose` and `sudo reboot`;
+- single rule `/etc/sudoers.d/90-ai-local-reboot` (0440, validated by
+  `visudo -c`): `adm ALL=(root) NOPASSWD: /usr/sbin/reboot`; no
+  `NOPASSWD: ALL`;
+- provisioning: **root** SSH by key, on the private network only
+  (`PermitRootLogin prohibit-password`, `AllowUsers adm root`);
+- cloud-init: pinned image, `resize_rootfs`, `qemu-guest-agent`, `curl`,
   `gnupg`, `ca-certificates`, `sudo`, `openssh-server`.
 
 ### 7.2 `vm/guest/base.sh` (root)
 
-Active le dépôt Docker officiel (`docker.sources` + clé), installe
+Enables the official Docker repository (`docker.sources` + key), installs
 `docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-docker-compose-plugin`, active Docker, ajoute `adm` au groupe `docker`.
-Idempotent : docker actif + compose + groupe = `[OK]`.
+docker-compose-plugin`, enables Docker, adds `adm` to the `docker` group.
+Idempotent: docker active + compose + group = `[OK]`.
 
 ### 7.3 `vm/guest/nvidia.sh` (root)
 
-Active `non-free`, installe `linux-image/headers-<cloud-amd64|amd64>`,
-`nvidia-driver`, `nvidia-smi`, `libcuda1`, `pciutils`. Installe
-`nvidia-container-toolkit` depuis son dépôt officiel, exécute
-`nvidia-ctk runtime configure --runtime=docker`, régénère le spec CDI
-`/var/run/cdi/nvidia.yaml`, redémarre Docker. `libcuda1` est indispensable :
-sans lui `nvidia-smi` fonctionne mais Ollama ne voit aucun backend CUDA et
-retombe sur CPU. Si `nvidia-smi` échoue encore : exit **3** (l'hôte redémarre
-l'invité et réessaie une fois). Si le runtime ou le spec CDI reste incomplet :
-diagnostic et exit 1.
+Enables `non-free`, installs `linux-image/headers-<cloud-amd64|amd64>`,
+`nvidia-driver`, `nvidia-smi`, `libcuda1`, `pciutils`. Installs
+`nvidia-container-toolkit` from its official repository, runs
+`nvidia-ctk runtime configure --runtime=docker`, regenerates the CDI spec
+`/var/run/cdi/nvidia.yaml`, restarts Docker. `libcuda1` is essential: without
+it `nvidia-smi` works but Ollama sees no CUDA backend and falls back to CPU.
+If `nvidia-smi` still fails: exit **3** (the host reboots the guest and retries
+once). If the runtime or the CDI spec remains incomplete: diagnostics and
+exit 1.
 
 ### 7.4 `vm/guest/ollama.sh` (root)
 
-`/home/adm/ollama/compose.yaml` (copié par l'hôte) :
+`/home/adm/ollama/compose.yaml` (copied by the host):
 
 ```yaml
 services:
@@ -313,77 +313,77 @@ services:
               capabilities: [gpu]
 ```
 
-`docker compose up -d`, attente API + `nvidia-smi` **et** `libcuda.so.1` dans
-le conteneur (180 s). `AILOCAL_RECREATE=1` ou un conteneur sans CUDA force
-`--force-recreate` quand le compose ou l'accès GPU a changé.
+`docker compose up -d`, wait for API + `nvidia-smi` **and** `libcuda.so.1` in
+the container (180 s). `AILOCAL_RECREATE=1` or a container without CUDA forces
+`--force-recreate` when the compose or GPU access has changed.
 
 ### 7.5 `vm/guest/openwebui.sh` (root)
 
-`/home/adm/openwebui/compose.yaml` : image
-`ghcr.io/open-webui/open-webui:v0.12.4`, port `10.0.10.11:3000:8080`, données
-dans `/home/adm/openwebui/data`, `OLLAMA_BASE_URL` **et** `OLLAMA_BASE_URLS`
-pointant sur `http://10.0.10.10:11434`. Attente `/health` (180 s).
+`/home/adm/openwebui/compose.yaml`: image
+`ghcr.io/open-webui/open-webui:v0.12.4`, port `10.0.10.11:3000:8080`, data in
+`/home/adm/openwebui/data`, `OLLAMA_BASE_URL` **and** `OLLAMA_BASE_URLS`
+pointing to `http://10.0.10.10:11434`. Wait for `/health` (180 s).
 
-### 7.6 Modèle
+### 7.6 Model
 
-`MODEL` dans `config.sh`, défaut `gemma4:12b`. Présent dans `/api/tags` = `[OK]` ;
-absent = `docker exec ollama ollama pull`, puis vérification. Un autre modèle se
-demande à aider par `--model`; le défaut ne change pas.
+`MODEL` in `config.sh`, default `gemma4:12b`. Present in `/api/tags` = `[OK]`;
+absent = `docker exec ollama ollama pull`, then verification. Another model is
+requested from aider with `--model`; the default does not change.
 
 ## 8. Idempotence
 
-Chaque étape suit : `si <vérification réelle> ; [OK] ; sinon agir ; [FAIT]`.
-Interdits : réinstaller un paquet présent, recréer un objet existant, relancer un
-pull de modèle présent, redémarrer une VM qui tourne, réécrire un fichier
-identique, relancer un `docker compose up` sans changement. Un `up` sur système
-conforme ne produit que des `[OK]`.
+Each step follows: `if <real check>; [OK]; otherwise act; [DONE]`.
+Forbidden: reinstalling a present package, recreating an existing object,
+re-running a pull for a present model, restarting a running VM, rewriting an
+identical file, re-running `docker compose up` without a change. An `up` on a
+compliant system produces only `[OK]`.
 
-Seule action systématique : reconstruction du seed cloud-init en mémoire, suivie
-d'une comparaison binaire ; le fichier n'est remplacé que s'il diffère.
+The only systematic action: rebuilding the cloud-init seed in memory, followed
+by a binary comparison; the file is replaced only if it differs.
 
-## 9. Matrice d'acceptation
+## 9. Acceptance matrix
 
-À exécuter sur la machine réelle, sans harnais de test ni faux `ssh`.
+To be run on the real machine, without a test harness or fake `ssh`.
 
-| # | Manipulation | Attendu |
+| # | Manipulation | Expected |
 |---|---|---|
-| A | `sudo ./bootstrap.sh up` deux fois | 2e passe : que des `[OK]`, exit 0 |
-| B | reboot hôte puis `up` | réseau, VM, conteneurs recréés ; modèles et données conservés ; `test` OK |
-| C | `down` puis `up` | réseau absent puis recréé ; disques et modèles intacts |
-| D | `sudo ip link del ailocal0` puis `up` | seul le réseau est recréé |
-| E | `ssh ollama docker stop ollama` puis `up` | seul le conteneur Ollama est redémarré |
-| F | `ssh ollama sudo reboot`, attendre, puis `up` | conteneur relancé, API et GPU OK |
-| G | `ssh ollama docker exec ollama ollama rm gemma4:12b` puis `up` | modèle retéléchargé, puis `[OK]` |
-| H | hôte vierge | `up` → REDÉMARRAGE REQUIS (2) → reboot → `up` → `test` OK |
-| I | `check` conforme / VM arrêtée | exit 0 / exit 1 |
-| J | `up` interrompu (Ctrl-C) pendant l'install invité | relance reprend sans doublon |
-| K | `ssh webui docker stop open-webui` puis `up` | conteneur WebUI redémarré, `test` OK |
-| L | modifier `OLLAMA_BASE_URL` dans le compose de la VM webui, puis `test` | `test` échoue (webui→ollama) ; `up` réinstalle le compose, recrée le conteneur, `test` OK |
+| A | `sudo ./bootstrap.sh up` twice | 2nd pass: only `[OK]`, exit 0 |
+| B | reboot host then `up` | network, VMs, containers recreated; models and data preserved; `test` OK |
+| C | `down` then `up` | network absent then recreated; disks and models intact |
+| D | `sudo ip link del ailocal0` then `up` | only the network is recreated |
+| E | `ssh ollama docker stop ollama` then `up` | only the Ollama container is restarted |
+| F | `ssh ollama sudo reboot`, wait, then `up` | container restarted, API and GPU OK |
+| G | `ssh ollama docker exec ollama ollama rm gemma4:12b` then `up` | model re-downloaded, then `[OK]` |
+| H | fresh host | `up` → REBOOT REQUIRED (2) → reboot → `up` → `test` OK |
+| I | `check` compliant / VM stopped | exit 0 / exit 1 |
+| J | `up` interrupted (Ctrl-C) during guest install | rerun resumes without duplication |
+| K | `ssh webui docker stop open-webui` then `up` | WebUI container restarted, `test` OK |
+| L | modify `OLLAMA_BASE_URL` in the webui VM compose, then `test` | `test` fails (webui→ollama); `up` reinstalls the compose, recreates the container, `test` OK |
 
-Budget : `up` conforme < 90 s (santé incluse), `check` < 30 s, `test` < 10 min
-(selon la vitesse du modèle).
+Budget: compliant `up` < 90 s (health included), `check` < 30 s, `test` < 10 min
+(depending on model speed).
 
-## 10. Règles pour un agent
+## 10. Agent rules
 
-1. Lire `OBJECTIFS.md` en entier puis `README.md`.
-2. Lancer `./bootstrap.sh check` avant toute modification, et après. Un
-   changement n'est terminé que si `check` repasse à 0.
-3. Plus petit changement possible. Pas de refactor opportuniste, de renommage ou
-   de réorganisation.
-4. Ne pas ajouter de fichier hors section 4, ni de dépendance hors section 6.1,
-   ni dépasser les budgets.
-5. Ne jamais corriger en ajoutant : un state file, un service, un marqueur, une
-   bibliothèque, une couche d'abstraction, une variable cachée.
-6. Git : commits directs sur `main`, un commit = un changement, message
-   `quoi: pourquoi`. Pas de branche, hook, rapport ou `--force`.
-7. Exigence ambiguë ou test impossible : s'arrêter, écrire la question dans
-   `TODO.md` (et seulement là), ne pas deviner.
-8. Ne pas modifier ce contrat sans demande explicite ; le code qui applique un
-   changement de contrat est dans le même commit.
-9. Ne jamais affaiblir une vérification pour faire passer un test.
-10. Vérifier au minimum A, B et `test` avant de conclure.
+1. Read `OBJECTIFS.md` in full, then `README.md`.
+2. Run `./bootstrap.sh check` before any change, and after. A change is only
+   complete once `check` is back to 0.
+3. Smallest possible change. No opportunistic refactoring, renaming or
+   reorganization.
+4. Do not add files outside section 4, nor dependencies outside section 6.1,
+   nor exceed the budgets.
+5. Never fix by adding: a state file, a service, a marker, a library, an
+   abstraction layer, a hidden variable.
+6. Git: direct commits on `main`, one commit = one change, message
+   `what: why`. No branch, hook, report or `--force`.
+7. Ambiguous requirement or impossible test: stop, write the question in
+   `TODO.md` (and only there), do not guess.
+8. Do not modify this contract without an explicit request; the code that
+   applies a contract change is in the same commit.
+9. Never weaken a check to make a test pass.
+10. Verify at least A, B and `test` before concluding.
 
-## 11. Dépannage de référence
+## 11. Reference troubleshooting
 
 ```sh
 ./bootstrap.sh status
@@ -408,57 +408,57 @@ sudo nft list ruleset
 ip -br link
 ```
 
-Réparations :
+Repairs:
 
-- réseau supprimé → `sudo ./bootstrap.sh up` ;
-- conteneur arrêté → `docker restart <nom>` ou `up` ;
-- compose modifié à la main → `up` le réinstalle et recrée le conteneur ;
-- modèle supprimé → `up` le retélécharge ;
-- pilote NVIDIA cassé → `up` réinstalle et redémarre l'invité au besoin ;
-- disque corrompu → `down`, supprimer `data/vm/<vm>.qcow2`, `up`.
+- network removed → `sudo ./bootstrap.sh up`;
+- container stopped → `docker restart <name>` or `up`;
+- compose modified by hand → `up` reinstalls it and recreates the container;
+- model deleted → `up` re-downloads it;
+- broken NVIDIA driver → `up` reinstalls it and reboots the guest if needed;
+- corrupted disk → `down`, delete `data/vm/<vm>.qcow2`, `up`.
 
-## 12. Risques connus
+## 12. Known risks
 
-- Le GPU quitte l'hôte après activation VFIO : accès console indispensable.
-- Le groupe IOMMU doit contenir exactement les deux fonctions GPU ; sinon
-  `10-vfio.sh` échoue volontairement.
-- L'API Ollama n'a aucune authentification : elle n'écoute que sur
-  `10.0.10.0/24`.
-- Le groupe `docker` équivaut à root dans une VM ; les VM ne sont pas exposées
-  au LAN.
-- `gemma4:12b` pèse plusieurs Go ; le premier `up` est long et dépend du réseau.
-- Un changement d'image ou de pilote peut nécessiter de recréer un disque ; les
-  modèles sont alors à retélécharger.
-- 31 Gio de RAM sont nécessaires pour 16 Gio (Ollama) + 8 Gio (WebUI) + hôte.
+- The GPU leaves the host once VFIO is enabled: console access is essential.
+- The IOMMU group must contain exactly the two GPU functions; otherwise
+  `10-vfio.sh` fails on purpose.
+- The Ollama API has no authentication: it only listens on `10.0.10.0/24`.
+- The `docker` group is root-equivalent inside a VM; the VMs are not exposed
+  to the LAN.
+- `gemma4:12b` weighs several GB; the first `up` is long and depends on the
+  network.
+- A change of image or driver may require recreating a disk; models must then
+  be re-downloaded.
+- 31 GiB of RAM are needed for 16 GiB (Ollama) + 8 GiB (WebUI) + host.
 
-## 13. Décisions
+## 13. Decisions
 
-| # | Décision | Raison |
+| # | Decision | Reason |
 |---|---|---|
-| ADR-1 | VFIO est le seul état persistant hôte | sans lui le GPU reste pris au reboot |
-| ADR-2 | Ollama et Open WebUI en conteneurs | versions figées, `docker compose` comme interface |
-| ADR-3 | Deux VM identiques, seule l'application change | installation rejouable, isolation |
-| ADR-4 | Modèles et données en bind mount dans les VM | visibles, sauvegardables, réparables |
-| ADR-5 | Réseau éphémère, aucun service systemd | supprime le point de panne du boot |
-| ADR-6 | Aucun fichier d'état ; l'état est observé | supprime les divergences marqueur/réalité |
-| ADR-7 | Reboot hôte jamais automatique ; reboot invité oui | l'administrateur garde la main |
-| ADR-8 | Provisioning en root SSH par clé, réseau privé | `adm` garde des droits étroits |
-| ADR-9 | uv/aider téléchargés à l'installation dans `~/.local/` | pas de binaires dans le dépôt, installation rejouable |
-| ADR-10 | `gemma4:12b` par défaut | choix utilisateur ; tient sur 16 Gio de VRAM |
-| ADR-11 | `test` séparé de `check` | `check` rapide et local ; `test` coûteux et bout en bout |
-| ADR-12 | Commits directs sur `main`, pas de revue | le process avait dépassé le code |
-| ADR-13 | `vim`, `tmux`, `glow`, `rsync` et alias `ll`/`la` sur l'hôte | confort demandé, sans service ni binaire dans le dépôt |
+| ADR-1 | VFIO is the only persistent host state | without it the GPU stays taken at boot |
+| ADR-2 | Ollama and Open WebUI in containers | pinned versions, `docker compose` as the interface |
+| ADR-3 | Two identical VMs, only the application changes | replayable install, isolation |
+| ADR-4 | Models and data in bind mounts inside the VMs | visible, backupable, repairable |
+| ADR-5 | Ephemeral network, no systemd service | removes the boot failure point |
+| ADR-6 | No state file; state is observed | removes marker/reality divergences |
+| ADR-7 | Host reboot never automatic; guest reboot yes | the administrator stays in control |
+| ADR-8 | Provisioning over root SSH by key, private network | `adm` keeps narrow rights |
+| ADR-9 | uv/aider downloaded at install time into `~/.local/` | no binaries in the repository, replayable install |
+| ADR-10 | `gemma4:12b` by default | user choice; fits in 16 GiB of VRAM |
+| ADR-11 | `test` separate from `check` | `check` fast and local; `test` costly and end-to-end |
+| ADR-12 | Direct commits on `main`, no review | the process had outgrown the code |
+| ADR-13 | `vim`, `tmux`, `glow`, `rsync` and `ll`/`la` aliases on the host | requested comfort, without a service or binary in the repository |
 
-## 14. Définition de terminé
+## 14. Definition of done
 
-- [ ] Aucun fichier hors section 4, aucun secret suivi.
-- [ ] `wc -l` des scripts ≤ 1700, aucun script > 220 lignes, `common.sh` ≤ 30.
-- [ ] Scénarios A à L passés sur la machine réelle.
-- [ ] `down` laisse l'hôte sans bridge, TAP ni règle nft.
-- [ ] `check` exit 0 sur système conforme, exit 1 VM arrêtée.
-- [ ] `test` valide les quatre chemins (hôte→Ollama, WebUI→Ollama,
-      hôte→WebUI, hôte→aider).
-- [ ] `up` sur système conforme n'affiche que des `[OK]`.
-- [ ] `vim`, `tmux`, `glow`, `rsync` présents et alias `ll`/`la` actifs.
-- [ ] `README.md` suffit à un administrateur qui n'a jamais lu le code.
-- [ ] `data/`, `logs/`, `run/` ignorés par Git.
+- [ ] No file outside section 4, no tracked secret.
+- [ ] `wc -l` of the scripts ≤ 1700, no script > 220 lines, `common.sh` ≤ 30.
+- [ ] Scenarios A to L passed on the real machine.
+- [ ] `down` leaves the host without bridge, TAP or nft rule.
+- [ ] `check` exit 0 on a compliant system, exit 1 when a VM is stopped.
+- [ ] `test` validates the four paths (host→Ollama, WebUI→Ollama,
+      host→WebUI, host→aider).
+- [ ] `up` on a compliant system prints only `[OK]`.
+- [ ] `vim`, `tmux`, `glow`, `rsync` present and `ll`/`la` aliases active.
+- [ ] `README.md` is enough for an administrator who has never read the code.
+- [ ] `data/`, `logs/`, `run/` ignored by Git.

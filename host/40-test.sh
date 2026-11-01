@@ -6,7 +6,7 @@ source "${ROOT}/config.sh"
 STEP="test"
 source "${ROOT}/common.sh"
 
-[[ "$(id -u)" -ne 0 ]] || die "lancer sans sudo : ./bootstrap.sh test"
+[[ "$(id -u)" -ne 0 ]] || die "run without sudo: ./bootstrap.sh test"
 OLLAMA_IP="${VM_IP[ollama]}"
 WEBUI_IP="${VM_IP[webui]}"
 API="http://${OLLAMA_IP}:${OLLAMA_PORT}"
@@ -21,27 +21,27 @@ wait_api() {
 
 test_ollama() {
   STEP="test/ollama"
-  wait_api || { echec "API Ollama injoignable sur ${API}"; return 1; }
+  wait_api || { echec "Ollama API unreachable on ${API}"; return 1; }
   if ! curl -fsS --max-time 15 "${API}/api/tags" | python3 -c 'import json,sys
 want = sys.argv[1]
 for item in json.load(sys.stdin).get("models") or []:
     if (item.get("name") or item.get("model") or "") == want:
         sys.exit(0)
 sys.exit(1)' "$MODEL"; then
-    echec "modèle ${MODEL} absent de ${API}/api/tags"
+    echec "model ${MODEL} missing from ${API}/api/tags"
     return 1
   fi
-  ok "modèle ${MODEL} présent"
-  attente "génération de test via ${MODEL} (peut prendre quelques minutes)"
+  ok "model ${MODEL} present"
+  attente "test generation via ${MODEL} (may take a few minutes)"
   local answer
   answer="$(curl -fsS --max-time 300 -X POST "${API}/api/generate" \
     -H 'Content-Type: application/json' \
-    -d "{\"model\":\"${MODEL}\",\"prompt\":\"Quel est le résultat de 17 + 25 ? Réponds uniquement par le nombre.\",\"stream\":false}" |
+    -d "{\"model\":\"${MODEL}\",\"prompt\":\"What is the result of 17 + 25? Answer with the number only.\",\"stream\":false}" |
     python3 -c 'import json,sys; print((json.load(sys.stdin).get("response") or "").strip())' 2>/dev/null)" ||
-    { echec "requête /api/generate en échec"; return 1; }
-  [[ -n "$answer" ]] || { echec "réponse vide de ${MODEL}"; return 1; }
-  grep -q '42' <<<"$answer" || { echec "réponse inattendue de ${MODEL} : ${answer:0:120}"; return 1; }
-  ok "réponse reçue : ${answer:0:80}"
+    { echec "/api/generate request failed"; return 1; }
+  [[ -n "$answer" ]] || { echec "empty response from ${MODEL}"; return 1; }
+  grep -q '42' <<<"$answer" || { echec "unexpected response from ${MODEL}: ${answer:0:120}"; return 1; }
+  ok "response received: ${answer:0:80}"
 }
 
 test_ollama_gpu() {
@@ -54,22 +54,22 @@ if not models:
 else:
     m = max(models, key=lambda x: int(x.get("size_vram") or 0))
     print(int(m.get("size") or 0), int(m.get("size_vram") or 0))' 2>/dev/null)" ||
-    { echec "GET /api/ps en échec"; return 1; }
-  [[ -n "$sizes" ]] || { echec "réponse /api/ps vide"; return 1; }
+    { echec "GET /api/ps failed"; return 1; }
+  [[ -n "$sizes" ]] || { echec "empty /api/ps response"; return 1; }
   read -r size vram <<<"$sizes"
   [[ "$size" =~ ^[0-9]+$ && "$vram" =~ ^[0-9]+$ ]] ||
-    { echec "tailles illisibles dans /api/ps"; return 1; }
+    { echec "unreadable sizes in /api/ps"; return 1; }
   if (( size == 0 )); then
-    echec "modèle absent de /api/ps"
+    echec "model missing from /api/ps"
     return 1
   elif (( vram == 0 )); then
-    echec "modèle chargé sans VRAM : Ollama utilise le CPU"
+    echec "model loaded without VRAM: Ollama is using the CPU"
     return 1
   elif (( vram < size )); then
-    echec "offload partiel : ${vram}/${size} octets en VRAM ($(( vram * 100 / size )) %)"
+    echec "partial offload: ${vram}/${size} bytes in VRAM ($(( vram * 100 / size )) %)"
     return 1
   else
-    ok "modèle entièrement sur GPU (${vram} octets en VRAM sur ${size})"
+    ok "model fully on GPU (${vram} bytes in VRAM out of ${size})"
   fi
 }
 
@@ -87,8 +87,8 @@ with urllib.request.urlopen(url, timeout=10) as response:
         raise SystemExit(f"HTTP {response.status}")
 print("ok")
 PY
-  then ok "le conteneur Open WebUI joint Ollama sur ${API}"
-  else echec "le conteneur Open WebUI ne joint pas Ollama sur ${API}"; return 1
+  then ok "the Open WebUI container reaches Ollama on ${API}"
+  else echec "the Open WebUI container cannot reach Ollama on ${API}"; return 1
   fi
 }
 
@@ -96,8 +96,8 @@ test_webui_health() {
   STEP="test/webui"
   local code
   code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "http://${WEBUI_IP}:${WEBUI_PORT}/health" || true)"
-  if [[ "$code" == "200" ]]; then ok "Open WebUI répond sur http://${WEBUI_IP}:${WEBUI_PORT}"
-  else echec "Open WebUI ne répond pas (HTTP ${code:-aucun}) sur ${WEBUI_IP}:${WEBUI_PORT}"; return 1; fi
+  if [[ "$code" == "200" ]]; then ok "Open WebUI responds on http://${WEBUI_IP}:${WEBUI_PORT}"
+  else echec "Open WebUI does not respond (HTTP ${code:-none}) on ${WEBUI_IP}:${WEBUI_PORT}"; return 1; fi
 }
 
 test_aider() {
@@ -108,28 +108,28 @@ test_aider() {
     git init -q "$sandbox"
     git -C "$sandbox" config user.email "test@ai-local.invalid"
     git -C "$sandbox" config user.name "ai-local"
-    printf 'Bac à sable de validation ai-local.\n' >"${sandbox}/README.md"
+    printf 'ai-local validation sandbox.\n' >"${sandbox}/README.md"
     git -C "$sandbox" add README.md
-    git -C "$sandbox" commit -qm "init: bac à sable"
+    git -C "$sandbox" commit -qm "init: sandbox"
   fi
-  attente "appel d'aider en mode non interactif"
+  attente "calling aider in non-interactive mode"
   set +e
   output="$(cd "$sandbox" && timeout 600 "${ROOT}/bin/aider-ollama" \
-    --message "Quel est le résultat de 17 + 25 ? Réponds uniquement par le nombre." \
+    --message "What is the result of 17 + 25? Answer with the number only." \
     --yes-always --no-auto-commits --no-check-update 2>&1)"
   rc=$?
   set -e
   if (( rc != 0 )); then
-    echec "aider a échoué (code ${rc}) :"
+    echec "aider failed (code ${rc}):"
     printf '%s\n' "$output" | tail -n 15
     return 1
   fi
   if ! grep -q '42' <<<"$output"; then
-    echec "aider a répondu sans le résultat attendu (42) :"
+    echec "aider responded without the expected result (42):"
     printf '%s\n' "$output" | tail -n 15
     return 1
   fi
-  ok "aider ${AIDER_VERSION} a répondu via ollama_chat/${MODEL}"
+  ok "aider ${AIDER_VERSION} responded via ollama_chat/${MODEL}"
 }
 
 fail=0
@@ -139,5 +139,5 @@ test_webui_health || fail=1
 test_aider || fail=1
 
 STEP="test"
-if (( fail == 0 )); then result "OK"; else result "ÉCHEC"; fi
+if (( fail == 0 )); then result "OK"; else result "FAIL"; fi
 exit "$fail"

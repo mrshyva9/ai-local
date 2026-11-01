@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/config.sh"
-STEP="hôte/aider"
+STEP="host/aider"
 source "${ROOT}/common.sh"
 
 MODE=install
@@ -11,12 +11,12 @@ case "${1:-}" in
   --check) MODE=check ;;
   --status) MODE=status ;;
   "") ;;
-  *) die "usage : $0 [--check|--status]" ;;
+  *) die "usage: $0 [--check|--status]" ;;
 esac
 
-# uv et aider sont téléchargés à l'installation, dans le HOME de l'appelant.
+# uv and aider are downloaded at install time, into the caller's HOME.
 USER_HOME="$(getent passwd "$(caller_uid)" | cut -d: -f6)"
-[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || die "répertoire personnel introuvable"
+[[ -n "$USER_HOME" && -d "$USER_HOME" ]] || die "home directory not found"
 LOCAL_BIN="${USER_HOME}/.local/bin"
 UV_BIN="${LOCAL_BIN}/uv"
 AIDER_BIN="${LOCAL_BIN}/aider"
@@ -45,20 +45,20 @@ sys.exit(1)' "$MODEL" 2>/dev/null
 report() {
   local fail=0 api_ok=0
   if [[ -x "$UV_BIN" ]] && [[ "$(uv_version)" == "$UV_VERSION" ]]; then ok "uv ${UV_VERSION}"
-  else echec "uv ${UV_VERSION} absent (${UV_BIN})"; fail=1; fi
+  else echec "uv ${UV_VERSION} missing (${UV_BIN})"; fail=1; fi
   if [[ -x "$AIDER_BIN" ]] && [[ "$(aider_version)" == "$AIDER_VERSION" ]]; then ok "aider ${AIDER_VERSION}"
-  else echec "aider ${AIDER_VERSION} absent (${AIDER_BIN})"; fail=1; fi
-  if [[ -x "$WRAPPER" ]]; then ok "lanceur ${WRAPPER#${ROOT}/}"
-  else echec "lanceur absent : ${WRAPPER#${ROOT}/}"; fail=1; fi
+  else echec "aider ${AIDER_VERSION} missing (${AIDER_BIN})"; fail=1; fi
+  if [[ -x "$WRAPPER" ]]; then ok "launcher ${WRAPPER#${ROOT}/}"
+  else echec "launcher missing: ${WRAPPER#${ROOT}/}"; fail=1; fi
   if version="$(api_version)" && [[ -n "$version" ]]; then
-    ok "API Ollama ${version} sur ${VM_IP[ollama]}:${OLLAMA_PORT}"
+    ok "Ollama API ${version} on ${VM_IP[ollama]}:${OLLAMA_PORT}"
     api_ok=1
-  else echec "API Ollama injoignable sur ${VM_IP[ollama]}:${OLLAMA_PORT}"; fail=1; fi
+  else echec "Ollama API unreachable on ${VM_IP[ollama]}:${OLLAMA_PORT}"; fail=1; fi
   if (( api_ok )); then
-    if model_present; then ok "modèle ${MODEL} présent"
-    else echec "modèle ${MODEL} absent"; fail=1; fi
+    if model_present; then ok "model ${MODEL} present"
+    else echec "model ${MODEL} missing"; fail=1; fi
   else
-    saute "modèle ${MODEL} non vérifié (API injoignable)"
+    saute "model ${MODEL} not checked (API unreachable)"
   fi
   return "$fail"
 }
@@ -73,18 +73,18 @@ if [[ "$MODE" == "check" ]]; then
   exit $?
 fi
 
-[[ "$(id -u)" -ne 0 ]] || die "lancer sans sudo : l'installation appartient à l'utilisateur appelant"
-command -v curl >/dev/null || die "curl absent"
-command -v python3 >/dev/null || die "python3 absent"
+[[ "$(id -u)" -ne 0 ]] || die "run without sudo: the installation belongs to the calling user"
+command -v curl >/dev/null || die "curl missing"
+command -v python3 >/dev/null || die "python3 missing"
 
 install_uv() {
   local tmp arch
   case "$(uname -m)" in
     x86_64|amd64) arch="x86_64-unknown-linux-gnu" ;;
-    *) die "architecture non gérée : $(uname -m)" ;;
+    *) die "unsupported architecture: $(uname -m)" ;;
   esac
   if [[ -x "$UV_BIN" ]] && [[ "$(uv_version)" == "$UV_VERSION" ]]; then
-    ok "uv ${UV_VERSION} déjà installé"
+    ok "uv ${UV_VERSION} already installed"
     return 0
   fi
   install -d -m 0755 "$LOCAL_BIN"
@@ -92,31 +92,31 @@ install_uv() {
   if ! curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
     -o "${tmp}/uv.tar.gz" \
     "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${arch}.tar.gz"; then
-    rm -rf -- "$tmp"; die "téléchargement de uv ${UV_VERSION} impossible"
+    rm -rf -- "$tmp"; die "downloading uv ${UV_VERSION} failed"
   fi
   if ! printf '%s  %s\n' "$UV_SHA256" "${tmp}/uv.tar.gz" | sha256sum --check --status; then
-    rm -rf -- "$tmp"; die "somme SHA-256 invalide pour uv ${UV_VERSION}"
+    rm -rf -- "$tmp"; die "invalid SHA-256 for uv ${UV_VERSION}"
   fi
   tar -xzf "${tmp}/uv.tar.gz" -C "$tmp"
   install -m 0755 "${tmp}/uv-${arch}/uv" "$UV_BIN"
   rm -rf -- "$tmp"
-  fait "uv ${UV_VERSION} installé dans ${LOCAL_BIN}"
+  fait "uv ${UV_VERSION} installed in ${LOCAL_BIN}"
 }
 
 install_aider() {
   if [[ -x "$AIDER_BIN" ]] && [[ "$(aider_version)" == "$AIDER_VERSION" ]]; then
-    ok "aider ${AIDER_VERSION} déjà installé"
+    ok "aider ${AIDER_VERSION} already installed"
     return 0
   fi
-  attente "téléchargement de Python ${AIDER_PYTHON} et aider ${AIDER_VERSION}"
+  attente "downloading Python ${AIDER_PYTHON} and aider ${AIDER_VERSION}"
   "$UV_BIN" python install "$AIDER_PYTHON" >/dev/null
   "$UV_BIN" tool install --force --python "$AIDER_PYTHON" "aider-chat==${AIDER_VERSION}" >/dev/null ||
-    die "installation d'aider ${AIDER_VERSION} impossible"
-  [[ -x "$AIDER_BIN" ]] || die "aider absent après installation"
-  fait "aider ${AIDER_VERSION} installé dans ${LOCAL_BIN}"
+    die "installing aider ${AIDER_VERSION} failed"
+  [[ -x "$AIDER_BIN" ]] || die "aider missing after installation"
+  fait "aider ${AIDER_VERSION} installed in ${LOCAL_BIN}"
 }
 
 install_uv
 install_aider
-[[ -x "$WRAPPER" ]] || die "lanceur absent du dépôt : ${WRAPPER#${ROOT}/}"
-report || die "aider est installé mais la chaîne Ollama n'est pas prête (voir [ÉCHEC])"
+[[ -x "$WRAPPER" ]] || die "launcher missing from repository: ${WRAPPER#${ROOT}/}"
+report || die "aider is installed but the Ollama chain is not ready (see [FAIL])"

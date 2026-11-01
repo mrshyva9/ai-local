@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Exécuté DANS l'invité, en root. Pilote NVIDIA + runtime Docker GPU.
-# Code retour 3 = redémarrage de l'invité nécessaire.
+# Executed INSIDE the guest, as root. NVIDIA driver + Docker GPU runtime.
+# Exit code 3 = guest reboot required.
 set -Eeuo pipefail
 
 CHECK=0
 [[ "${1:-}" == "--check" ]] && CHECK=1
-ok()    { printf '[invité/nvidia] [OK]      %s\n' "$*"; }
-fait()  { printf '[invité/nvidia] [FAIT]    %s\n' "$*"; }
-echec() { printf "[invité/nvidia] [ÉCHEC]   %s\n" "$*"; }
+ok()    { printf '[guest/nvidia] [OK]      %s\n' "$*"; }
+fait()  { printf '[guest/nvidia] [DONE]    %s\n' "$*"; }
+echec() { printf "[guest/nvidia] [FAIL]    %s\n" "$*"; }
 die()   { echec "$*"; exit 1; }
 
 smi_ok()     { nvidia-smi -L >/dev/null 2>&1; }
@@ -17,15 +17,15 @@ toolkit_ok() {
   command -v nvidia-ctk >/dev/null 2>&1 &&
     docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia
 }
-# Le runtime Docker récent passe par CDI : un spec généré avant libcuda1 ne
-# contient pas libcuda.so et le conteneur retombe silencieusement sur CPU.
+# Recent Docker runtimes go through CDI: a spec generated before libcuda1 does
+# not contain libcuda.so, and the container silently falls back to CPU.
 cdi_ok() {
   [[ -f /var/run/cdi/nvidia.yaml ]] &&
     grep -q 'libcuda\.so' /var/run/cdi/nvidia.yaml
 }
 
 diagnose() {
-  echec "nvidia-smi ne fonctionne pas ; diagnostic :"
+  echec "nvidia-smi does not work; diagnostics:"
   modinfo -F vermagic nvidia 2>&1 || true
   lsmod | grep -E '^nvidia' || true
   ldconfig -p | grep -E 'libcuda|libnvidia-ml' || true
@@ -33,14 +33,14 @@ diagnose() {
 }
 
 if driver_ok && toolkit_ok && cdi_ok; then
-  ok "GPU visible et runtime Docker nvidia actif : $(nvidia-smi -L | head -n 1)"
+  ok "GPU visible and Docker nvidia runtime active: $(nvidia-smi -L | head -n 1)"
   exit 0
 fi
 if (( CHECK )); then
-  smi_ok || echec "nvidia-smi indisponible (pilote absent ou redémarrage requis)"
-  cuda_ok || echec "libcuda.so.1 absente (paquet libcuda1 manquant)"
-  toolkit_ok || echec "runtime Docker nvidia absent (nvidia-container-toolkit)"
-  cdi_ok || echec "spec CDI NVIDIA obsolète (libcuda absente)"
+  smi_ok || echec "nvidia-smi unavailable (driver missing or reboot required)"
+  cuda_ok || echec "libcuda.so.1 missing (libcuda1 package missing)"
+  toolkit_ok || echec "Docker nvidia runtime missing (nvidia-container-toolkit)"
+  cdi_ok || echec "NVIDIA CDI spec stale (libcuda missing)"
   exit 1
 fi
 
@@ -60,19 +60,19 @@ Suites: trixie-security
 Components: contrib non-free non-free-firmware
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
-    fait "dépôt non-free activé"
+    fait "non-free repository enabled"
   fi
   case "$(uname -r)" in
     *-cloud-amd64) SUFFIX=cloud-amd64 ;;
     *-amd64) SUFFIX=amd64 ;;
-    *) die "noyau Debian non reconnu : $(uname -r)" ;;
+    *) die "unrecognized Debian kernel: $(uname -r)" ;;
   esac
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o DPkg::Lock::Timeout=300 update
   apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
     "linux-image-${SUFFIX}" "linux-headers-${SUFFIX}" nvidia-driver nvidia-smi \
     libcuda1 pciutils
-  fait "pilote NVIDIA installé"
+  fait "NVIDIA driver installed"
 fi
 
 if ! command -v nvidia-ctk >/dev/null 2>&1; then
@@ -88,28 +88,28 @@ if ! command -v nvidia-ctk >/dev/null 2>&1; then
   apt-get -o DPkg::Lock::Timeout=300 update
   apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
     nvidia-container-toolkit
-  fait "nvidia-container-toolkit installé"
+  fait "nvidia-container-toolkit installed"
 fi
 
 nvidia-ctk runtime configure --runtime=docker >/dev/null
 install -d -m 0755 /var/run/cdi
 if ! nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml >/dev/null 2>&1; then
-  die "génération du spec CDI NVIDIA impossible"
+  die "generating the NVIDIA CDI spec failed"
 fi
-fait "spec CDI NVIDIA régénéré"
+fait "NVIDIA CDI spec regenerated"
 systemctl restart docker
-systemctl is-active --quiet docker || die "Docker ne redémarre pas après configuration nvidia"
+systemctl is-active --quiet docker || die "Docker does not restart after nvidia configuration"
 
 if driver_ok && toolkit_ok && cdi_ok; then
-  ok "GPU visible et runtime Docker nvidia actif : $(nvidia-smi -L | head -n 1)"
+  ok "GPU visible and Docker nvidia runtime active: $(nvidia-smi -L | head -n 1)"
   exit 0
 fi
 if ! driver_ok; then
   diagnose
   if ! smi_ok; then
-    printf '[invité/nvidia] [ATTENTE] pilote installé, redémarrage de l’invité nécessaire\n'
+    printf '[guest/nvidia] [WAIT] driver installed, guest reboot required\n'
     exit 3
   fi
-  die "libcuda.so.1 toujours absente après installation de libcuda1"
+  die "libcuda.so.1 still missing after installing libcuda1"
 fi
-die "runtime Docker nvidia ou spec CDI incomplet après configuration"
+die "Docker nvidia runtime or CDI spec incomplete after configuration"

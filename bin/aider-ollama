@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lance aider contre l'API Ollama de la VM. Arguments transmis à aider.
+# Run aider against the VM's Ollama API. Arguments are passed through to aider.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -7,7 +7,7 @@ source "${ROOT}/config.sh"
 
 AIDER="${AIDER_BIN:-${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.local/bin/aider}"
 [[ -x "$AIDER" ]] || {
-  printf 'aider absent : lancer « sudo ./bootstrap.sh up ».\n' >&2
+  printf 'aider missing: run "sudo ./bootstrap.sh up".\n' >&2
   exit 1
 }
 

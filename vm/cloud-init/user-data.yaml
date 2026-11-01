@@ -6,7 +6,7 @@ disable_root: false
 
 users:
   - name: __GUEST_USER__
-    gecos: Administrateur de la VM
+    gecos: VM administrator
     primary_group: adm
     shell: /bin/bash
     lock_passwd: true
@@ -50,4 +50,4 @@ runcmd:
   - sshd -t
   - systemctl reload ssh
 
-final_message: "__VM_NAME__ : cloud-init terminé en $UPTIME s."
+final_message: "__VM_NAME__: cloud-init finished in $UPTIME s."

@@ -1,82 +1,82 @@
-# ai-local — IA locale sur Debian 13 (GPU passthrough)
+# ai-local — local AI on Debian 13 (GPU passthrough)
 
-Deux VM identiques, seule l'application change :
+Two identical VMs, only the application changes:
 
 ```
-hôte Debian 13
-├── bridge ailocal0 (10.0.10.1/24, éphémère)
-├── ollama-gpu  10.0.10.10  GPU NVIDIA en passthrough → Ollama en conteneur
-└── openwebui   10.0.10.11  Open WebUI en conteneur → http://10.0.10.10:11434
-        aider (hôte) ────────────────────────────────┘
+Debian 13 host
+├── bridge ailocal0 (10.0.10.1/24, ephemeral)
+├── ollama-gpu  10.0.10.10  NVIDIA GPU passthrough → Ollama in a container
+└── openwebui   10.0.10.11  Open WebUI in a container → http://10.0.10.10:11434
+        aider (host) ─────────────────────────────────┘
 ```
 
-Tout est rejouable : `up` ne fait que ce qui manque, sinon affiche `[OK]`.
-Les modèles, les données WebUI et les pilotes vivent dans les disques qcow2.
-L'hôte ne garde que la configuration noyau VFIO (GRUB, initramfs, modprobe), les
-outils de confort et le client aider, installé dans `~/.local/` au moment du `up`.
+Everything is replayable: `up` only does what is missing, otherwise prints `[OK]`.
+Models, WebUI data and drivers live in the qcow2 disks.
+The host keeps only the VFIO kernel configuration (GRUB, initramfs, modprobe),
+the comfort tools and the aider client, installed in `~/.local/` during `up`.
 
-## Prérequis
+## Prerequisites
 
-- Debian 13, x86_64, VT-x/VT-d, 24 Gio de RAM libres conseillés, ≥ 20 Gio disque.
-- Carte NVIDIA dédiée dont les deux fonctions PCI sont seules dans leur groupe
-  IOMMU ; l'affichage de l'hôte reste sur l'iGPU.
-- Accès console à l'hôte : le GPU disparaît de l'hôte après activation VFIO.
-- Sortie Internet pour les téléchargements (image, Docker, pilote, modèle).
+- Debian 13, x86_64, VT-x/VT-d, 24 GiB of free RAM recommended, ≥ 20 GiB disk.
+- Dedicated NVIDIA card whose two PCI functions are alone in their IOMMU
+  group; the host display stays on the iGPU.
+- Console access to the host: the GPU disappears from the host once VFIO is
+  enabled.
+- Internet access for downloads (image, Docker, driver, model).
 
-## Commandes
+## Commands
 
 ```sh
-sudo ./bootstrap.sh up          # converge tout ; exit 2 = redémarrer l'hôte
-./bootstrap.sh status           # état lisible, sans root
-./bootstrap.sh check            # écart au contrat, sans root (exit 0/1)
-./bootstrap.sh test             # validation de bout en bout, sans root
-sudo ./bootstrap.sh down        # arrêt propre des VM + retrait du réseau
-./bootstrap.sh ssh ollama       # session adm dans la VM (ou : webui)
+sudo ./bootstrap.sh up          # converge everything; exit 2 = reboot the host
+./bootstrap.sh status           # readable state, without root
+./bootstrap.sh check            # deviation from the contract, without root (exit 0/1)
+./bootstrap.sh test             # end-to-end validation, without root
+sudo ./bootstrap.sh down        # clean VM shutdown + network removal
+./bootstrap.sh ssh ollama       # adm session in the VM (or: webui)
 ```
 
-Premier lancement sur hôte vierge :
+First run on a fresh host:
 
-1. `sudo ./bootstrap.sh up` configure VFIO, affiche `REDÉMARRAGE REQUIS`, exit 2.
-2. Redémarrer l'hôte à la main.
-3. `sudo ./bootstrap.sh up` télécharge l'image, crée les deux VM, installe
-   Docker, le pilote NVIDIA, Ollama, Open WebUI, puis `gemma4:12b` (~8 Gio).
-   Compter 20–40 min selon la connexion.
+1. `sudo ./bootstrap.sh up` configures VFIO, prints `REBOOT REQUIRED`, exit 2.
+2. Reboot the host manually.
+3. `sudo ./bootstrap.sh up` downloads the image, creates both VMs, installs
+   Docker, the NVIDIA driver, Ollama, Open WebUI, then `gemma4:12b` (~8 GiB).
+   Allow 20–40 min depending on the connection.
 
-Les fois suivantes, `up` doit être quasi immédiat et n'afficher que des `[OK]`.
+On subsequent runs, `up` must be almost immediate and print only `[OK]`.
 
-## Accès
+## Access
 
 | Service | URL |
 |---|---|
 | Ollama (API) | `http://10.0.10.10:11434` |
 | Open WebUI | `http://10.0.10.11:3000` |
-| aider | `./bin/aider-ollama` (modèle `ollama_chat/gemma4:12b`) |
+| aider | `./bin/aider-ollama` (model `ollama_chat/gemma4:12b`) |
 
-Open WebUI crée son compte administrateur au premier accès : le premier
-utilisateur enregistré devient admin. Les données persistent dans le disque de
-la VM `openwebui`.
+Open WebUI creates its administrator account on first access: the first
+registered user becomes admin. Data persists in the disk of the `openwebui` VM.
 
 ## aider
 
 ```sh
-cd ~/mon-projet
-"$HOME/ai-local/bin/aider-ollama" fichier.py
+cd ~/my-project
+"$HOME/ai-local/bin/aider-ollama" file.py
 "$HOME/ai-local/bin/aider-ollama" --model ollama_chat/gemma4:e2b   # override
 ```
 
-Le lanceur fixe `OLLAMA_API_BASE=http://10.0.10.10:11434` et préfixe le modèle
-avec `ollama_chat/` (sans ce préfixe, aider échoue avec « LLM Provider NOT
-provided »). Rien n'est versionné : `up` télécharge uv, Python 3.12 et aider
-dans `~/.local/` de l'utilisateur qui lance sudo.
+The launcher sets `OLLAMA_API_BASE=http://10.0.10.10:11434` and prefixes the
+model with `ollama_chat/` (without that prefix, aider fails with "LLM Provider
+NOT provided"). Nothing is versioned: `up` downloads uv, Python 3.12 and aider
+into `~/.local/` of the user who runs sudo.
 
-## Outils de confort
+## Comfort tools
 
-`up` installe `vim`, `tmux`, `glow` et `rsync` sur l'hôte. Les alias `ll` et
-`la` sont vérifiés dans `~/.bashrc` ; seuls les alias manquants sont ajoutés,
-une définition existante n'est jamais remplacée. Ouvrir un nouveau shell (ou
-`source ~/.bashrc`) pour les activer.
+`up` installs `vim`, `tmux`, `glow` and `rsync` on the host. The `ll` and `la`
+aliases are checked in `~/.bashrc`; only missing aliases are added, an existing
+definition is never replaced. Open a new shell (or `source ~/.bashrc`) to
+activate them.
 
-## Dépannage
+## Troubleshooting
 
 ```sh
 ./bootstrap.sh status
@@ -85,36 +85,36 @@ tail -n 100 logs/ollama-gpu-console.log
 tail -n 100 logs/openwebui-console.log
 ./bootstrap.sh ssh ollama
     docker ps -a; docker logs --tail 50 ollama; nvidia-smi
-    docker exec ollama ollama ps          # doit afficher 100% GPU
+    docker exec ollama ollama ps          # must show 100% GPU
     docker exec ollama nvidia-smi -L
 ./bootstrap.sh ssh webui
     docker ps -a; docker logs --tail 50 open-webui
-ls data/vm/*-seed-*.iso                    # seeds cloud-init, nommés par contenu
+ls data/vm/*-seed-*.iso                    # cloud-init seeds, named by content
 sudo ip -br link; sudo nft list ruleset
 ```
 
-Réparations typiques, toutes suivies de `up` :
+Typical repairs, all followed by `up`:
 
-| Symptôme | Geste |
+| Symptom | Action |
 |---|---|
-| bridge/TAP supprimés | `sudo ./bootstrap.sh up` (seul le réseau est recréé) |
-| conteneur arrêté | `docker restart ollama` dans la VM, ou `up` |
-| VM arrêtée | `sudo ./bootstrap.sh up` |
-| modèle supprimé | `sudo ./bootstrap.sh up` (retélécharge) |
-| Ollama reste sur CPU (`ollama ps`) | `up` vérifie `libcuda1` et régénère le spec CDI |
-| pilote NVIDIA cassé | `up` réinstalle puis redémarre l'invité si nécessaire |
-| disque à refaire | arrêter, supprimer `data/vm/<vm>.qcow2`, `up` |
+| bridge/TAP removed | `sudo ./bootstrap.sh up` (only the network is recreated) |
+| container stopped | `docker restart ollama` in the VM, or `up` |
+| VM stopped | `sudo ./bootstrap.sh up` |
+| model deleted | `sudo ./bootstrap.sh up` (re-downloads it) |
+| Ollama stays on CPU (`ollama ps`) | `up` checks `libcuda1` and regenerates the CDI spec |
+| broken NVIDIA driver | `up` reinstalls it, then reboots the guest if needed |
+| disk to rebuild | stop, delete `data/vm/<vm>.qcow2`, `up` |
 
-`down` conserve les disques, les modèles et les données. Pour repartir de zéro :
-`sudo ./bootstrap.sh down`, puis supprimer les qcow2 concernés.
+`down` preserves disks, models and data. To start from scratch:
+`sudo ./bootstrap.sh down`, then delete the relevant qcow2 files.
 
-## Limites assumées
+## Accepted limitations
 
-- L'API Ollama n'a **aucune authentification** : elle n'écoute que sur le
-  réseau privé `10.0.10.0/24`, jamais sur le LAN.
-- Dans les VM, `adm` appartient au groupe `docker` (équivalent root) et peut
-  faire `sudo reboot` sans mot de passe. Les VM sont jetables et non exposées.
-- Le réseau privé est **éphémère** : aucun service systemd, pas de persistance
-  au boot. `up` le recrée.
-- Le contrat complet (matrice d'acceptation, décisions) est dans
+- The Ollama API has **no authentication**: it only listens on the private
+  `10.0.10.0/24` network, never on the LAN.
+- Inside the VMs, `adm` belongs to the `docker` group (root-equivalent) and can
+  run `sudo reboot` without a password. The VMs are disposable and not exposed.
+- The private network is **ephemeral**: no systemd service, no persistence
+  across boot. `up` recreates it.
+- The full contract (acceptance matrix, decisions) is in
   [`OBJECTIFS.md`](OBJECTIFS.md).

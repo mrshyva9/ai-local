@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Paramètres du projet. Aucune logique, aucun secret.
-# Sourcé par tous les scripts ; ne rien exécuter ici.
+# Project parameters. No logic, no secrets.
+# Sourced by every script; do not execute anything here.
 
 PROJECT="ai-local"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,7 +12,7 @@ RUN="${ROOT}/run"
 GUEST_USER="adm"
 GUEST_HOME="/home/${GUEST_USER}"
 
-# --- Réseau privé de l'hôte (éphémère, recréé à chaque up) -------------------
+# --- Host private network (ephemeral, recreated on every up) -----------------
 BRIDGE="ailocal0"
 SUBNET="10.0.10.0/24"
 SUBNET_PREFIX="${SUBNET#*/}"
@@ -22,12 +22,12 @@ DNS2="9.9.9.9"
 NFT_FWD="ailocal"
 NFT_NAT="ailocal_nat"
 
-# --- GPU (les deux fonctions doivent partager le groupe IOMMU) ---------------
+# --- GPU (both functions must share the same IOMMU group) --------------------
 GPU_VIDEO="0000:01:00.0"
 GPU_AUDIO="0000:01:00.1"
 GPU_IDS="10de:2805,10de:22bd"
 
-# --- Image invitée (version figée : l'URL contrairement à « latest ») --------
+# --- Guest image (pinned version: the URL, unlike "latest") ------------------
 IMAGE_VERSION="20261026-2643"
 IMAGE_NAME="debian-13-genericcloud-amd64-${IMAGE_VERSION}.qcow2"
 IMAGE_URL="https://cloud.debian.org/images/cloud/trixie/${IMAGE_VERSION}/${IMAGE_NAME}"
@@ -43,14 +43,14 @@ WEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.12.4"
 WEBUI_PORT="3000"
 WEBUI_INTERNAL_PORT="8080"
 
-# --- Client hôte : uv et aider sont téléchargés à l'installation ------------
-# Rien n'est versionné ni stocké dans le dépôt : tout va dans ~/.local.
+# --- Host client: uv and aider are downloaded at install time ----------------
+# Nothing is versioned or stored in the repository: everything goes to ~/.local.
 AIDER_VERSION="0.86.2"
 AIDER_PYTHON="3.12"
 UV_VERSION="0.13.5"
 UV_SHA256="f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
 
-# --- Définition des VM : même architecture, seule l'application change ------
+# --- VM definitions: same architecture, only the application changes --------
 VMS=(ollama webui)
 
 declare -A VM_NAME VM_IP VM_MAC VM_VCPUS VM_RAM_MIB VM_DISK_GIB VM_TAP VM_GPU VM_APP VM_CONTAINER
@@ -76,7 +76,7 @@ VM_GPU[webui]=0
 VM_APP[webui]="openwebui"
 VM_CONTAINER[webui]="open-webui"
 
-# --- SSH vers les invités (clé et known_hosts restent dans le dépôt) ---------
+# --- SSH to guests (key and known_hosts stay in the repository) --------------
 SSH_OPTS=(
   -i "${KEYS}/id_ed25519"
   -o BatchMode=yes
@@ -86,7 +86,7 @@ SSH_OPTS=(
   -o LogLevel=ERROR
 )
 
-# Renvoie le nom d'utilisateur propriétaire de l'appelant.
+# Return the username owning the caller.
 caller_uid() { printf '%s' "${SUDO_UID:-$(id -u)}"; }
 caller_gid() { printf '%s' "${SUDO_GID:-$(id -g)}"; }
 caller_name() { id -un "$(caller_uid)"; }
