@@ -1,0 +1,17 @@
+FROM __MODEL_BASE__
+
+# Vital parameters for 16 GB of VRAM and OpenCode.
+PARAMETER num_ctx 65536
+PARAMETER temperature 0.1
+PARAMETER top_p 0.95
+PARAMETER top_k 64
+
+# Prevent the model from looping forever on output.
+PARAMETER stop "<|turn|>"
+PARAMETER stop "<|file|>"
+
+SYSTEM """
+You are a senior development agent integrated into the OpenCode environment.
+You are rigorous, concise and efficient. Answer directly by providing valid,
+optimized, bug-free code. No unnecessary chatter.
+"""

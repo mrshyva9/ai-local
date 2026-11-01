@@ -111,6 +111,7 @@ ai-local/
 │   │   ├── ollama.sh     Ollama container + GPU
 │   │   └── openwebui.sh  Open WebUI container
 │   ├── apps/
+│   │   ├── Modelfile     derived model (64k context, OpenCode prompt)
 │   │   ├── ollama.yaml   Ollama compose (models in a bind mount)
 │   │   └── openwebui.yaml Open WebUI compose (Ollama URL)
 │   └── cloud-init/       user-data, meta-data, network-config
@@ -154,7 +155,7 @@ shared). `check` and `status` are used without root; checks that require root
 [host/vfio]      [OK]      GPU already bound to vfio-pci
 [network]        [DONE]    bridge ailocal0 created (10.0.10.1/24)
 [guest/ollama]   [OK]      ollama container active, API and GPU compliant
-[test/aider]     [OK]      aider 0.86.2 responded via ollama_chat/gemma4:12b
+[test/aider]     [OK]      aider 0.86.2 responded via ollama_chat/gemma4:12b-agent
 Result: OK
 ```
 
@@ -227,14 +228,17 @@ exists but the checksum differs: failure, file preserved.
    `config.sh`, compares its SHA-256 with the copy in
    `/home/adm/<app>/compose.yaml`, copies it if different and then requests a
    container recreation;
-4. for `ollama`, runs `vm/guest/nvidia.sh`; on code 3, reboots the guest, waits
+4. for `ollama`, does the same with `vm/apps/Modelfile` (rendered with
+   `MODEL_BASE`) and `/home/adm/ollama/Modelfile`;
+5. for `ollama`, runs `vm/guest/nvidia.sh`; on code 3, reboots the guest, waits
    for SSH, retries once;
-5. runs `vm/guest/<app>.sh`;
-6. for `ollama`, checks `MODEL` in `/api/tags`, otherwise
-   `docker exec ollama ollama pull "$MODEL"`.
+6. runs `vm/guest/<app>.sh`;
+7. for `ollama`, ensures `MODEL_BASE` is in `/api/tags` (pull if absent), then
+   creates `MODEL` with `docker exec ollama ollama create -f` when it is
+   missing or when the Modelfile changed.
 
-`check` runs the same scripts with `--check` and compares the compose;
-`status` shows container, API and model.
+`check` runs the same scripts with `--check` and compares the compose and the
+Modelfile; `status` shows container, API, base model and derived model.
 
 ### 6.7 `host/30-aider.sh`
 
@@ -326,9 +330,13 @@ pointing to `http://10.0.10.10:11434`. Wait for `/health` (180 s).
 
 ### 7.6 Model
 
-`MODEL` in `config.sh`, default `gemma4:12b`. Present in `/api/tags` = `[OK]`;
-absent = `docker exec ollama ollama pull`, then verification. Another model is
-requested from aider with `--model`; the default does not change.
+`config.sh` defines `MODEL_BASE="gemma4:12b"` (pulled from the registry) and
+`MODEL="gemma4:12b-agent"` (derived). `vm/apps/Modelfile` sets `num_ctx 65536`,
+`temperature 0.1`, `top_p 0.95`, `top_k 64`, the stops `<|turn|>` and
+`<|file|>`, and an English OpenCode system prompt. Base present = `[OK]`; absent =
+`docker exec ollama ollama pull`. The derived model is recreated with
+`ollama create` when it is missing or when the Modelfile changed. Another model
+is requested from aider with `--model`; the default does not change.
 
 ## 8. Idempotence
 
@@ -353,7 +361,7 @@ To be run on the real machine, without a test harness or fake `ssh`.
 | D | `sudo ip link del ailocal0` then `up` | only the network is recreated |
 | E | `ssh ollama docker stop ollama` then `up` | only the Ollama container is restarted |
 | F | `ssh ollama sudo reboot`, wait, then `up` | container restarted, API and GPU OK |
-| G | `ssh ollama docker exec ollama ollama rm gemma4:12b` then `up` | model re-downloaded, then `[OK]` |
+| G | `ssh ollama docker exec ollama ollama rm gemma4:12b-agent` then `up` | derived model recreated, then `[OK]` |
 | H | fresh host | `up` → REBOOT REQUIRED (2) → reboot → `up` → `test` OK |
 | I | `check` compliant / VM stopped | exit 0 / exit 1 |
 | J | `up` interrupted (Ctrl-C) during guest install | rerun resumes without duplication |
@@ -425,8 +433,8 @@ Repairs:
 - The Ollama API has no authentication: it only listens on `10.0.10.0/24`.
 - The `docker` group is root-equivalent inside a VM; the VMs are not exposed
   to the LAN.
-- `gemma4:12b` weighs several GB; the first `up` is long and depends on the
-  network.
+- `gemma4:12b` weighs several GB and the derived 64k context uses ~10 GiB of
+  VRAM; the first `up` is long and depends on the network.
 - A change of image or driver may require recreating a disk; models must then
   be re-downloaded.
 - 31 GiB of RAM are needed for 16 GiB (Ollama) + 8 GiB (WebUI) + host.
@@ -444,7 +452,7 @@ Repairs:
 | ADR-7 | Host reboot never automatic; guest reboot yes | the administrator stays in control |
 | ADR-8 | Provisioning over root SSH by key, private network | `adm` keeps narrow rights |
 | ADR-9 | uv/aider downloaded at install time into `~/.local/` | no binaries in the repository, replayable install |
-| ADR-10 | `gemma4:12b` by default | user choice; fits in 16 GiB of VRAM |
+| ADR-10 | `gemma4:12b-agent` derived from `gemma4:12b` by default | user choice; 64k context and low temperature fit in 16 GiB of VRAM |
 | ADR-11 | `test` separate from `check` | `check` fast and local; `test` costly and end-to-end |
 | ADR-12 | Direct commits on `main`, no review | the process had outgrown the code |
 | ADR-13 | `vim`, `tmux`, `glow`, `rsync` and `ll`/`la` aliases on the host | requested comfort, without a service or binary in the repository |

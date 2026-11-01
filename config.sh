@@ -38,7 +38,9 @@ OVMF_VARS_TEMPLATE="/usr/share/OVMF/OVMF_VARS_4M.fd"
 # --- Applications ------------------------------------------------------------
 OLLAMA_IMAGE="ollama/ollama:0.40.12"
 OLLAMA_PORT="11434"
-MODEL="gemma4:12b"
+# MODEL is derived from MODEL_BASE through vm/apps/Modelfile (64k context, OpenCode prompt).
+MODEL_BASE="gemma4:12b"
+MODEL="gemma4:12b-agent"
 WEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.12.4"
 WEBUI_PORT="3000"
 WEBUI_INTERNAL_PORT="8080"

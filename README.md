@@ -40,7 +40,8 @@ First run on a fresh host:
 1. `sudo ./bootstrap.sh up` configures VFIO, prints `REBOOT REQUIRED`, exit 2.
 2. Reboot the host manually.
 3. `sudo ./bootstrap.sh up` downloads the image, creates both VMs, installs
-   Docker, the NVIDIA driver, Ollama, Open WebUI, then `gemma4:12b` (~8 GiB).
+   Docker, the NVIDIA driver, Ollama and Open WebUI, then pulls `gemma4:12b`
+   (~8 GiB) and derives `gemma4:12b-agent` from `vm/apps/Modelfile`.
    Allow 20–40 min depending on the connection.
 
 On subsequent runs, `up` must be almost immediate and print only `[OK]`.
@@ -51,7 +52,7 @@ On subsequent runs, `up` must be almost immediate and print only `[OK]`.
 |---|---|
 | Ollama (API) | `http://10.0.10.10:11434` |
 | Open WebUI | `http://10.0.10.11:3000` |
-| aider | `./bin/aider-ollama` (model `ollama_chat/gemma4:12b`) |
+| aider | `./bin/aider-ollama` (model `ollama_chat/gemma4:12b-agent`) |
 
 Open WebUI creates its administrator account on first access: the first
 registered user becomes admin. Data persists in the disk of the `openwebui` VM.
@@ -68,6 +69,15 @@ The launcher sets `OLLAMA_API_BASE=http://10.0.10.10:11434` and prefixes the
 model with `ollama_chat/` (without that prefix, aider fails with "LLM Provider
 NOT provided"). Nothing is versioned: `up` downloads uv, Python 3.12 and aider
 into `~/.local/` of the user who runs sudo.
+
+## Model
+
+`gemma4:12b` is pulled from the registry as the base. `up` then creates
+`gemma4:12b-agent` from `vm/apps/Modelfile`: 64k context, temperature 0.1,
+`top_p 0.95`, `top_k 64`, two stop tokens and an English OpenCode system prompt.
+The Modelfile is copied into the VM only when its content changes, and the
+derived model is rebuilt when it is missing or when the Modelfile changed.
+A second `up` prints only `[OK]`.
 
 ## Comfort tools
 
@@ -100,7 +110,8 @@ Typical repairs, all followed by `up`:
 | bridge/TAP removed | `sudo ./bootstrap.sh up` (only the network is recreated) |
 | container stopped | `docker restart ollama` in the VM, or `up` |
 | VM stopped | `sudo ./bootstrap.sh up` |
-| model deleted | `sudo ./bootstrap.sh up` (re-downloads it) |
+| model deleted | `sudo ./bootstrap.sh up` (re-downloads and recreates it) |
+| Modelfile modified | `sudo ./bootstrap.sh up` (recreates the derived model) |
 | Ollama stays on CPU (`ollama ps`) | `up` checks `libcuda1` and regenerates the CDI spec |
 | broken NVIDIA driver | `up` reinstalls it, then reboots the guest if needed |
 | disk to rebuild | stop, delete `data/vm/<vm>.qcow2`, `up` |
