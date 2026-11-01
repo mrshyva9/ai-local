@@ -26,15 +26,21 @@ if [[ -f "${KEYS}/id_ed25519.pub" ]]; then PUBKEY="$(<"${KEYS}/id_ed25519.pub")"
 arg() { awk -v o="$2" '$0 == o { getline; print; exit }' <<<"$1"; }
 
 # 0 = ce PID est bien la VM attendue ; 1 = arrêtée ; die = PID suspect.
+# QEMU tourne en root, mais check et status s'utilisent sans root : kill -0 et
+# la lecture de /proc/<pid>/exe sont refusés (EPERM) à un autre utilisateur.
+# /proc/<pid> et /proc/<pid>/cmdline restent, eux, lisibles par tous.
 running() {
-  local pid cmd
+  local pid cmd argv0
   [[ -f "$PIDFILE" ]] || return 1
   pid="$(<"$PIDFILE")"
   [[ "$pid" =~ ^[0-9]+$ ]] || die "PID invalide dans ${PIDFILE}"
-  kill -0 "$pid" 2>/dev/null || return 1
-  [[ "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)" == *qemu-system-x86_64 ]] ||
-    die "le PID ${pid} n'est pas QEMU ; intervention manuelle requise"
+  [[ -d "/proc/${pid}" ]] || return 1
   cmd="$(tr '\0' '\n' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+  # Un zombie n'a plus de ligne de commande : il ne fait pas tourner la VM.
+  [[ -n "$cmd" ]] || return 1
+  argv0="${cmd%%$'\n'*}"
+  [[ "${argv0##*/}" == "qemu-system-x86_64" ]] ||
+    die "le PID ${pid} n'est pas QEMU ; intervention manuelle requise"
   [[ "$(arg "$cmd" -name)" == "$NAME" && "$(arg "$cmd" -pidfile)" == "$PIDFILE" ]] ||
     die "le PID ${pid} n'est pas la VM ${NAME} ; intervention manuelle requise"
   return 0
